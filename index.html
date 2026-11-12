@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161a">
+<title>Roux · Premier bloc</title>
+<style>
+:root{
+  --bg:#f4f2ee; --card:#ffffff; --ink:#1b1d21; --mute:#6b6f76; --line:#e4e1da;
+  --acc:#d4552b; --acc-ink:#fff; --ok:#2f8a57; --warn:#c9821a; --bad:#c23b3b; --chip:#efece6;
+  --cW:#f7f7f2; --cY:#f2cf2a; --cG:#2fa45a; --cB:#2a63c9; --cR:#cf2f2f; --cO:#f08a1c;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#14161a; --card:#1d2026; --ink:#eceae5; --mute:#9aa0a8; --line:#2c3038; --chip:#262a31; --acc:#ef6a3c; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+body{padding:calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 30px)}
+header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:-.01em;flex:1}
+header h1 small{display:block;font-size:12px;font-weight:500;color:var(--mute);letter-spacing:0}
+.pill{font-size:12.5px;padding:6px 10px;border-radius:999px;background:var(--chip);color:var(--mute);white-space:nowrap}
+.pill.on{background:rgba(47,138,87,.15);color:var(--ok)}
+.pill.warn{background:rgba(201,130,26,.15);color:var(--warn)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:12px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:0 0 10px;font-weight:600}
+button{font:inherit;border:0;border-radius:12px;padding:13px 16px;background:var(--chip);color:var(--ink);font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button.primary{background:var(--acc);color:var(--acc-ink)}
+button.small{padding:8px 12px;font-size:14px;border-radius:10px}
+button:disabled{opacity:.45}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row>button{flex:1}
+.mute{color:var(--mute)}
+.hint{font-size:14px;color:var(--mute);margin:8px 0 0}
+.banner{border-radius:12px;padding:10px 12px;font-size:14.5px;margin-bottom:12px}
+.banner.warn{background:rgba(201,130,26,.14);color:var(--ink);border:1px solid rgba(201,130,26,.35)}
+.banner.bad{background:rgba(194,59,59,.12);border:1px solid rgba(194,59,59,.35)}
+.seq{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 2px}
+.mv{font:600 22px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:9px 10px;border-radius:10px;background:var(--chip);min-width:46px;text-align:center}
+.mv.done{opacity:.28}
+.mv.current{background:var(--acc);color:var(--acc-ink)}
+.mv.partial{background:rgba(212,85,43,.25)}
+.fix{margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(194,59,59,.12);font-weight:600}
+.fix span{font:700 22px ui-monospace,Menlo,monospace;margin-left:6px}
+.big{font:700 54px/1.05 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.02em;margin:6px 0}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.stat{background:var(--chip);border-radius:12px;padding:10px 12px}
+.stat b{display:block;font-size:20px}
+.stat span{font-size:12.5px;color:var(--mute)}
+.recon{font:500 17px/1.9 ui-monospace,Menlo,monospace;word-spacing:3px}
+.recon .tk{border-bottom:3px solid transparent;padding:0 1px}
+.recon .p{font:600 12px -apple-system,sans-serif;color:var(--bad);background:rgba(194,59,59,.1);padding:2px 6px;border-radius:6px;margin:0 3px;word-spacing:0}
+.sol{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--line)}
+.sol code{flex:1;font:600 17px ui-monospace,Menlo,monospace}
+ul.steps{list-style:none;padding:0;margin:8px 0 0}
+ul.steps li{padding:5px 0;display:flex;justify-content:space-between;border-bottom:1px dashed var(--line);font-size:15px}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+td,th{padding:7px 4px;text-align:right;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+td:first-child,th:first-child{text-align:left}
+select,input[type=text],input[type=number]{font:inherit;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%}
+label.f{display:block;font-size:13.5px;color:var(--mute);margin:10px 0 4px}
+details{margin-top:4px}
+summary{cursor:pointer;font-weight:600;padding:4px 0}
+textarea{width:100%;height:120px;font:12px ui-monospace,Menlo,monospace;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:8px}
+.net{display:grid;grid-template-columns:repeat(12,16px);grid-auto-rows:16px;gap:2px;margin-top:8px}
+.net i{border-radius:3px;display:block}
+.net i.x{visibility:hidden}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
+.toast.show{opacity:.95}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:8}
+.modal.show{display:flex}
+.modal .card{max-width:420px;width:100%}
+</style>
+</head>
+<body>
+<header>
+  <h1>Roux · Premier bloc<small>Blanc en bas, vert devant · bloc rouge à gauche</small></h1>
+  <span id="conn" class="pill">Cube non connecté</span>
+</header>
+
+<div id="banners"></div>
+<div id="main"></div>
+<div id="history"></div>
+
+<div class="card">
+  <details id="settings">
+    <summary>Réglages et outils</summary>
+    <label class="f">Seuil de pause (secondes)</label>
+    <input id="pauseThr" type="number" min="0.3" max="5" step="0.1">
+    <label class="f">Adresse MAC du cube (seulement si la connexion la demande)</label>
+    <div class="row"><input id="macInput" type="text" placeholder="CC:A3:00:00:XX:XX" autocapitalize="characters" style="flex:2"><button class="small" id="macSave">Enregistrer</button></div>
+    <label class="f">État du cube</label>
+    <div class="row"><button class="small" id="resetSolved">Mon cube est résolu</button><button class="small" id="toggleNet">Afficher le cube</button></div>
+    <div id="netBox"></div>
+    <label class="f">Mode test sans cube : tape des mouvements (ex. « R U M' r »)</label>
+    <div class="row"><input id="simInput" type="text" placeholder="R U2 M' r" autocapitalize="off" style="flex:2"><button class="small" id="simGo">Jouer</button></div>
+    <label class="f">Exporter pour l'analyse</label>
+    <div class="row"><button class="small" id="exportBtn">Copier mes séances</button><button class="small" id="clearBtn">Effacer l'historique</button></div>
+    <textarea id="exportBox" style="display:none" readonly></textarea>
+    <p class="hint" id="diag"></p>
+  </details>
+</div>
+
+<div class="modal" id="modal"><div class="card"><p id="modalText"></p><div class="row"><button id="modalNo">Annuler</button><button class="primary" id="modalYes">Confirmer</button></div></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ===================================================================
+//  Roux FB trainer — core logic (no DOM). Works in browser and Node.
+// ===================================================================
+(function (root) {
+'use strict';
+
+// ------------------------------------------------------------------
+// AES-128 (ECB, single block) — used by the QiYi protocol
+// ------------------------------------------------------------------
+const AES = (function () {
+  const SBOX = new Uint8Array(256), INV = new Uint8Array(256);
+  const rotl8 = (x, s) => ((x << s) | (x >> (8 - s))) & 0xff;
+  let p = 1, q = 1;
+  do {
+    p = (p ^ (p << 1) ^ (p & 0x80 ? 0x1b : 0)) & 0xff;
+    q ^= q << 1; q ^= q << 2; q ^= q << 4; q &= 0xff; if (q & 0x80) q ^= 0x09;
+    const x = q ^ rotl8(q, 1) ^ rotl8(q, 2) ^ rotl8(q, 3) ^ rotl8(q, 4);
+    SBOX[p] = (x ^ 0x63) & 0xff;
+  } while (p !== 1);
+  SBOX[0] = 0x63;
+  for (let i = 0; i < 256; i++) INV[SBOX[i]] = i;
+  const xt = a => ((a << 1) ^ (a & 0x80 ? 0x1b : 0)) & 0xff;
+  const mul = (a, b) => { let r = 0; while (b) { if (b & 1) r ^= a; a = xt(a); b >>= 1; } return r; };
+
+  function expand(key) {
+    const w = new Uint8Array(176); w.set(key);
+    let rcon = 1;
+    for (let i = 16; i < 176; i += 4) {
+      let t = [w[i - 4], w[i - 3], w[i - 2], w[i - 1]];
+      if (i % 16 === 0) {
+        t = [SBOX[t[1]] ^ rcon, SBOX[t[2]], SBOX[t[3]], SBOX[t[0]]];
+        rcon = xt(rcon);
+      }
+      for (let j = 0; j < 4; j++) w[i + j] = w[i - 16 + j] ^ t[j];
+    }
+    return w;
+  }
+  const addRK = (s, w, r) => { for (let i = 0; i < 16; i++) s[i] ^= w[r * 16 + i]; };
+  function encrypt(block, w) {
+    const s = Uint8Array.from(block);
+    addRK(s, w, 0);
+    for (let r = 1; r <= 10; r++) {
+      for (let i = 0; i < 16; i++) s[i] = SBOX[s[i]];
+      const t = Uint8Array.from(s);
+      for (let row = 0; row < 4; row++) for (let c = 0; c < 4; c++) s[row + 4 * c] = t[row + 4 * ((c + row) % 4)];
+      if (r < 10) for (let c = 0; c < 4; c++) {
+        const a0 = s[4 * c], a1 = s[4 * c + 1], a2 = s[4 * c + 2], a3 = s[4 * c + 3];
+        s[4 * c] = mul(a0, 2) ^ mul(a1, 3) ^ a2 ^ a3;
+        s[4 * c + 1] = a0 ^ mul(a1, 2) ^ mul(a2, 3) ^ a3;
+        s[4 * c + 2] = a0 ^ a1 ^ mul(a2, 2) ^ mul(a3, 3);
+        s[4 * c + 3] = mul(a0, 3) ^ a1 ^ a2 ^ mul(a3, 2);
+      }
+      addRK(s, w, r);
+    }
+    return s;
+  }
+  function decrypt(block, w) {
+    const s = Uint8Array.from(block);
+    addRK(s, w, 10);
+    for (let r = 9; r >= 0; r--) {
+      const t = Uint8Array.from(s);
+      for (let row = 0; row < 4; row++) for (let c = 0; c < 4; c++) s[row + 4 * c] = t[row + 4 * ((c - row + 4) % 4)];
+      for (let i = 0; i < 16; i++) s[i] = INV[s[i]];
+      addRK(s, w, r);
+      if (r > 0) for (let c = 0; c < 4; c++) {
+        const a0 = s[4 * c], a1 = s[4 * c + 1], a2 = s[4 * c + 2], a3 = s[4 * c + 3];
+        s[4 * c] = mul(a0, 14) ^ mul(a1, 11) ^ mul(a2, 13) ^ mul(a3, 9);
+        s[4 * c + 1] = mul(a0, 9) ^ mul(a1, 14) ^ mul(a2, 11) ^ mul(a3, 13);
+        s[4 * c + 2] = mul(a0, 13) ^ mul(a1, 9) ^ mul(a2, 14) ^ mul(a3, 11);
+        s[4 * c + 3] = mul(a0, 11) ^ mul(a1, 13) ^ mul(a2, 9) ^ mul(a3, 14);
+      }
+    }
+    return s;
+  }
+  return { expand, encrypt, decrypt };
+})();
+
+function crc16modbus(bytes) {
+  let crc = 0xffff;
+  for (const b of bytes) {
+    crc ^= b;
+    for (let i = 0; i < 8; i++) crc = (crc & 1) ? ((crc >> 1) ^ 0xa001) : (crc >> 1);
+  }
+  return crc;
+}
+
+// ------------------------------------------------------------------
+// QiYi protocol helpers (message framing, parsing)
+// ------------------------------------------------------------------
+const QIYI = (function () {
+  const KEY = AES.expand(Uint8Array.from([87, 177, 249, 171, 205, 90, 232, 167, 156, 185, 140, 231, 87, 140, 81, 8]));
+  // internal (white-top / green-front) move codes
+  const CODES = { 1: ['L', -1], 2: ['L', 1], 3: ['R', -1], 4: ['R', 1], 5: ['D', -1], 6: ['D', 1],
+                  7: ['U', -1], 8: ['U', 1], 9: ['F', -1], 10: ['F', 1], 11: ['B', -1], 12: ['B', 1] };
+  // Fred holds the cube white-bottom / green-front = z2 of the internal frame
+  const TO_USER = { U: 'D', D: 'U', R: 'L', L: 'R', F: 'F', B: 'B' };
+
+  function frame(content) {
+    const msg = [0xfe, content.length + 4, ...content];
+    const c = crc16modbus(msg);
+    msg.push(c & 0xff, c >> 8);
+    while (msg.length % 16) msg.push(0);
+    const out = new Uint8Array(msg.length);
+    for (let i = 0; i < msg.length; i += 16) out.set(AES.encrypt(msg.slice(i, i + 16), KEY), i);
+    return out;
+  }
+  function decode(bytes) {
+    const out = new Uint8Array(bytes.length - (bytes.length % 16));
+    for (let i = 0; i < out.length; i += 16) out.set(AES.decrypt(bytes.slice(i, i + 16), KEY), i);
+    if (out[0] !== 0xfe) return null;
+    const len = out[1];
+    if (len < 4 || len > out.length) return null;
+    const crc = crc16modbus(out.slice(0, len - 2));
+    if ((out[len - 2] | (out[len - 1] << 8)) !== crc) return null;
+    return out.slice(0, len);
+  }
+  function hello(mac) { // mac: 'CC:A3:00:00:25:13'
+    const m = mac.split(':').map(h => parseInt(h, 16)).reverse();
+    return frame([0x00, 0x6b, 0x01, 0x00, 0x00, 0x22, 0x06, 0x00, 0x02, 0x08, 0x00, ...m]);
+  }
+  const ack = msg => frame([msg[2], msg[3], msg[4], msg[5], msg[6]]);
+  const ts = (m, o) => ((m[o] << 24) | (m[o + 1] << 16) | (m[o + 2] << 8) | m[o + 3]) >>> 0;
+  function facelets(msg) { // 54 internal facelet colors (0 O,1 R,2 Y,3 W,4 G,5 B), Kociemba URFDLB order
+    const f = [];
+    for (let i = 0; i < 27; i++) { const b = msg[7 + i]; f.push(b & 15, b >> 4); }
+    return f;
+  }
+  function history(msg, variant) { // previous moves, newest first. variant 0: [ts4][mv], 1: [mv][ts4]
+    const out = [];
+    for (let k = 1; k <= 11; k++) {
+      const off = 91 - 5 * k;
+      const t = variant ? ts(msg, off + 1) : ts(msg, off);
+      const mv = variant ? msg[off] : msg[off + 4];
+      out.push({ ts: t, code: mv });
+    }
+    return out;
+  }
+  return { KEY, CODES, TO_USER, frame, decode, hello, ack, ts, facelets, history };
+})();
+
+// ------------------------------------------------------------------
+// Geometric sticker model, user frame:
+//   x: left(-) -> right(+),  y: down(-) -> up(+),  z: back(-) -> front(+)
+//   Fred's orientation: U yellow, D white, F green, B blue, L red, R orange
+// ------------------------------------------------------------------
+const Cube = (function () {
+  const SLOTS = []; const KEYIDX = {};
+  const key = (p, n) => p.join(',') + '|' + n.join(',');
+  for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) {
+    const p = [x, y, z];
+    for (let a = 0; a < 3; a++) if (p[a] !== 0) {
+      const n = [0, 0, 0]; n[a] = p[a];
+      KEYIDX[key(p, n)] = SLOTS.length; SLOTS.push({ p, n });
+    }
+  }
+  function rot1(v, axis) { const [x, y, z] = v;
+    if (axis === 0) return [x, -z, y]; if (axis === 1) return [z, y, -x]; return [-y, x, z]; }
+  function rot(v, axis, q) { q = ((q % 4) + 4) % 4; for (let i = 0; i < q; i++) v = rot1(v, axis); return v; }
+
+  // base: axis, layers, quarter turns (ccw about +axis) for amount 1
+  const BASE = {
+    U: [1, [1], -1], D: [1, [-1], 1], R: [0, [1], -1], L: [0, [-1], 1], F: [2, [1], -1], B: [2, [-1], 1],
+    M: [0, [0], 1], E: [1, [0], 1], S: [2, [0], -1], r: [0, [0, 1], -1],
+  };
+  const PERM = {};
+  function permFor(type, amt) {
+    const k = type + amt;
+    if (PERM[k]) return PERM[k];
+    const [axis, layers, q] = BASE[type];
+    const perm = new Int16Array(SLOTS.length);
+    SLOTS.forEach((s, i) => {
+      if (layers.includes(s.p[axis])) perm[i] = KEYIDX[key(rot(s.p, axis, q * amt), rot(s.n, axis, q * amt))];
+      else perm[i] = i;
+    });
+    return (PERM[k] = perm);
+  }
+  const FACE_COLOR = { U: 'Y', D: 'W', F: 'G', B: 'B', L: 'R', R: 'O' };
+  const NORMAL_FACE = n => n[1] === 1 ? 'U' : n[1] === -1 ? 'D' : n[0] === 1 ? 'R' : n[0] === -1 ? 'L' : n[2] === 1 ? 'F' : 'B';
+  function solved() { return SLOTS.map(s => FACE_COLOR[NORMAL_FACE(s.n)]); }
+  function apply(state, type, amt) {
+    const perm = permFor(type, ((amt % 4) + 4) % 4);
+    const out = new Array(state.length);
+    for (let i = 0; i < state.length; i++) out[perm[i]] = state[i];
+    return out;
+  }
+  // parse notation like "R U2 M' r"
+  function parseAlg(str) {
+    return str.trim().split(/\s+/).filter(Boolean).map(t => {
+      const m = /^([UDFBLRMESr])(2|')?$/.exec(t);
+      if (!m) throw new Error('bad move ' + t);
+      return { type: m[1], amt: m[2] === '2' ? 2 : m[2] === "'" ? 3 : 1 };
+    });
+  }
+  function applyAlg(state, alg) { for (const m of (typeof alg === 'string' ? parseAlg(alg) : alg)) state = apply(state, m.type, m.amt); return state; }
+  const fmt = (type, amt) => type + (((amt % 4) + 4) % 4 === 2 ? '2' : ((amt % 4) + 4) % 4 === 3 ? "'" : '');
+
+  // Kociemba facelet index in the INTERNAL frame (white top, green front, red right)
+  function kocIndex(P, N) {
+    const [X, Y, Z] = P;
+    if (N[1] === 1) return 0 + (Z + 1) * 3 + (X + 1);
+    if (N[0] === 1) return 9 + (1 - Y) * 3 + (1 - Z);
+    if (N[2] === 1) return 18 + (1 - Y) * 3 + (X + 1);
+    if (N[1] === -1) return 27 + (1 - Z) * 3 + (X + 1);
+    if (N[0] === -1) return 36 + (1 - Y) * 3 + (Z + 1);
+    return 45 + (1 - Y) * 3 + (1 - X);
+  }
+  const NIB = ['O', 'R', 'Y', 'W', 'G', 'B'];
+  // user slot -> internal kociemba index (internal = user rotated z2)
+  const USER2KOC = SLOTS.map(s => kocIndex([-s.p[0], -s.p[1], s.p[2]], [-s.n[0], -s.n[1], s.n[2]]));
+  function fromInternalFacelets(f) { return SLOTS.map((s, i) => NIB[f[USER2KOC[i]]]); }
+  function toInternalFacelets(state) { const f = new Array(54); state.forEach((c, i) => { f[USER2KOC[i]] = NIB.indexOf(c); }); return f; }
+  function isValid(state) {
+    const cnt = {}; for (const c of state) cnt[c] = (cnt[c] || 0) + 1;
+    if (!'WYGBRO'.split('').every(c => cnt[c] === 9)) return false;
+    return SLOTS.every((s, i) => s.p.filter(v => v !== 0).length !== 1 || state[i] === FACE_COLOR[NORMAL_FACE(s.n)]);
+  }
+  const equal = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  // net for display: face -> 9 colors in reading order (as seen from outside, standard net)
+  function net(state) {
+    const out = {};
+    const grid = {
+      U: (r, c) => [c - 1, 1, r - 1], D: (r, c) => [c - 1, -1, 1 - r], F: (r, c) => [c - 1, 1 - r, 1],
+      B: (r, c) => [1 - c, 1 - r, -1], L: (r, c) => [-1, 1 - r, c - 1], R: (r, c) => [1, 1 - r, 1 - c],
+    };
+    const nrm = { U: [0, 1, 0], D: [0, -1, 0], F: [0, 0, 1], B: [0, 0, -1], L: [-1, 0, 0], R: [1, 0, 0] };
+    for (const f in grid) { out[f] = []; for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) out[f].push(state[KEYIDX[key(grid[f](r, c), nrm[f])]]); }
+    return out;
+  }
+  return { SLOTS, KEYIDX, key, permFor, solved, apply, applyAlg, parseAlg, fmt, fromInternalFacelets, toInternalFacelets, isValid, equal, net, kocIndex, USER2KOC };
+})();
+
+// ------------------------------------------------------------------
+// First Block (red centre on L, white on D): DLF, DLB, DL, FL, BL
+// ------------------------------------------------------------------
+const FB = (function () {
+  const S = Cube.solved();
+  const { KEYIDX, key, SLOTS } = Cube;
+  const DEF = [ // [position, reference normal]
+    { name: 'DLF', p: [-1, -1, 1], n: [0, -1, 0] },
+    { name: 'DLB', p: [-1, -1, -1], n: [0, -1, 0] },
+    { name: 'DL', p: [-1, -1, 0], n: [0, -1, 0] },
+    { name: 'FL', p: [-1, 0, 1], n: [-1, 0, 0] },
+    { name: 'BL', p: [-1, 0, -1], n: [-1, 0, 0] },
+  ];
+  const slotsAt = p => SLOTS.map((s, i) => i).filter(i => SLOTS[i].p.join() === p.join());
+  const PIECES = DEF.map(d => {
+    const at = slotsAt(d.p);
+    return { ...d, colors: at.map(i => S[i]).sort().join(''), ref: S[KEYIDX[key(d.p, d.n)]], home: KEYIDX[key(d.p, d.n)] };
+  });
+  const CORNER_SLOTS = [], EDGE_SLOTS = [], CI = {}, EI = {};
+  SLOTS.forEach((s, i) => { const nz = s.p.filter(v => v).length;
+    if (nz === 3) { CI[i] = CORNER_SLOTS.length; CORNER_SLOTS.push(i); }
+    if (nz === 2) { EI[i] = EDGE_SLOTS.length; EDGE_SLOTS.push(i); } });
+  const POSITIONS = []; { const seen = {}; SLOTS.forEach(s => { const k = s.p.join(); if (!seen[k]) { seen[k] = 1; POSITIONS.push(s.p); } }); }
+  const POS_SLOTS = POSITIONS.map(p => slotsAt(p));
+
+  // locate reference-sticker slots of the 5 pieces in a state
+  function locate(state) {
+    const res = new Array(5);
+    for (const at of POS_SLOTS) {
+      if (at.length < 2) continue;
+      const cols = at.map(i => state[i]).sort().join('');
+      PIECES.forEach((pc, j) => { if (pc.colors === cols) res[j] = at.find(i => state[i] === pc.ref); });
+    }
+    return res; // slot indices
+  }
+  // goal configurations: L^k applied to home
+  const GOALS = [0, 1, 2, 3].map(k => PIECES.map(pc => { let s = pc.home; for (let t = 0; t < k; t++) s = Cube.permFor('L', 1)[s]; return s; }));
+  // check a subset of pieces (indices) is solved for a common k
+  function subsetSolved(loc, idx) { return GOALS.some(g => idx.every(j => loc[j] === g[j])); }
+  const isSolved = state => subsetSolved(locate(state), [0, 1, 2, 3, 4]);
+
+  // ---------------- solver ----------------
+  const TYPES = ['U', 'D', 'F', 'B', 'R', 'L', 'M', 'r'];
+  const AXIS = { U: 1, D: 1, F: 2, B: 2, R: 0, L: 0, M: 0, r: 0 };
+  const MOVES = []; TYPES.forEach((t, ti) => [1, 2, 3].forEach(a => MOVES.push({ type: t, amt: a, ti, axis: AXIS[t] })));
+  const NM = MOVES.length;
+  const CM = new Uint8Array(NM * 24), EM = new Uint8Array(NM * 24);
+  MOVES.forEach((m, mi) => { const perm = Cube.permFor(m.type, m.amt);
+    for (let i = 0; i < 24; i++) { CM[mi * 24 + i] = CI[perm[CORNER_SLOTS[i]]]; EM[mi * 24 + i] = EI[perm[EDGE_SLOTS[i]]]; } });
+  // coordinates: c1,c2 in corner index space; e1,e2,e3 in edge space
+  const toCoord = loc => [CI[loc[0]], CI[loc[1]], EI[loc[2]], EI[loc[3]], EI[loc[4]]];
+  // pruning tables over 4 of the 5 pieces (24^4 each)
+  const TABLE_DEFS = [[0, 1, 2, 3], [0, 1, 2, 4], [0, 1, 3, 4], [0, 2, 3, 4], [1, 2, 3, 4]];
+  let TABLES = null;
+  const isCorner = j => j < 2;
+  function buildTables() {
+    if (TABLES) return TABLES;
+    const goalsC = GOALS.map(toCoord);
+    TABLES = TABLE_DEFS.map(def => {
+      const T = new Uint8Array(24 ** 4).fill(255);
+      const enc = c => ((c[0] * 24 + c[1]) * 24 + c[2]) * 24 + c[3];
+      let frontier = [];
+      for (const g of goalsC) { const c = def.map(j => g[j]); const i = enc(c); if (T[i] === 255) { T[i] = 0; frontier.push(c); } }
+      let d = 0;
+      while (frontier.length) {
+        const next = [];
+        for (const c of frontier) for (let mi = 0; mi < NM; mi++) {
+          const n = def.map((j, k) => (isCorner(j) ? CM : EM)[mi * 24 + c[k]]);
+          const i = enc(n);
+          if (T[i] === 255) { T[i] = d + 1; next.push(n); }
+        }
+        frontier = next; d++;
+      }
+      return { def, T };
+    });
+    return TABLES;
+  }
+  function h(c) {
+    let best = 0;
+    for (const { def, T } of TABLES) {
+      const v = T[((c[def[0]] * 24 + c[def[1]]) * 24 + c[def[2]]) * 24 + c[def[3]]];
+      if (v > best) best = v;
+    }
+    return best;
+  }
+  function stepCoord(c, mi) {
+    return [CM[mi * 24 + c[0]], CM[mi * 24 + c[1]], EM[mi * 24 + c[2]], EM[mi * 24 + c[3]], EM[mi * 24 + c[4]]];
+  }
+  // returns { length, solutions: [ "r U M' ..." ] }
+  const COST = { U: 1, R: 1, r: 1, M: 1, L: 1.1, F: 1.3, D: 1.6, B: 1.8 };
+  const score = sol => sol.split(' ').reduce((a, m) => a + (COST[m[0]] || 1) + (m.length > 1 && m[1] === '2' ? 0.2 : 0), 0);
+  function solve(state, maxSolutions = 5, maxDepth = 14, collect = 40) {
+    buildTables();
+    const start = toCoord(locate(state));
+    if (h(start) === 0) return { length: 0, solutions: [''] };
+    const sols = [];
+    const path = [];
+    function dfs(c, g, bound, lastTi, lastAxis) {
+      const hv = h(c);
+      if (g + hv > bound) return;
+      if (hv === 0) { sols.push(path.map(mi => Cube.fmt(MOVES[mi].type, MOVES[mi].amt)).join(' ')); return; }
+      for (let mi = 0; mi < NM; mi++) {
+        const m = MOVES[mi];
+        if (m.ti === lastTi) continue;
+        if (m.axis === lastAxis && m.ti < lastTi) continue; // canonical order for commuting moves
+        path.push(mi);
+        dfs(stepCoord(c, mi), g + 1, bound, m.ti, m.axis);
+        path.pop();
+        if (sols.length >= collect) return;
+      }
+    }
+    for (let bound = h(start); bound <= maxDepth; bound++) {
+      dfs(start, 0, bound, -1, -1);
+      if (sols.length) return { length: bound, solutions: sols.sort((a, b) => score(a) - score(b)).slice(0, maxSolutions) };
+    }
+    return { length: null, solutions: [] };
+  }
+  return { PIECES, locate, isSolved, subsetSolved, solve, buildTables, GOALS };
+})();
+
+// ------------------------------------------------------------------
+// Move-stream utilities (user frame quarter turns from the sensor)
+// ------------------------------------------------------------------
+const Recon = (function () {
+  const OPP = { U: 'D', D: 'U', R: 'L', L: 'R', F: 'B', B: 'F' };
+  // slice made of (positive face, negative face) in sensor terms: M a = R a + L -a, E a = U a + D -a, S a = B a + F -a
+  const SLICE = { R: 'M', U: 'E', B: 'S' };
+  const norm = a => ((a % 4) + 4) % 4;
+  // quarter list: [{face, d(+1/-1), t, tc}] -> reconstruction tokens [{label, type, amt, t}]
+  function reconstruct(quarters, sliceMs = 130) {
+    // 1) merge consecutive same-face quarters
+    const turns = []; let cancels = 0;
+    for (const q of quarters) {
+      const last = turns[turns.length - 1];
+      if (last && last.type === q.face && !last.closed) {
+        last.amt = norm(last.amt + q.d); last.qs.push(q);
+        if (last.amt === 0) { turns.pop(); cancels += 2; }
+      } else turns.push({ type: q.face, amt: norm(q.d), t: q.t, tc: q.tc, qs: [q] });
+      const lt = turns[turns.length - 1]; if (lt && lt.qs.includes(q)) lt.tEnd = q.t;
+    }
+    // 2) merge opposite-face pairs that happened (almost) simultaneously into slices
+    const out = [];
+    for (let i = 0; i < turns.length; i++) {
+      const a = turns[i], b = turns[i + 1];
+      if (b && OPP[a.type] === b.type && norm(a.amt + b.amt) === 0) {
+        const ta = a.tc != null && b.tc != null ? Math.abs(b.tc - a.tc) : Math.abs(b.t - a.t);
+        if (ta <= sliceMs) {
+          const pos = SLICE[a.type] ? a : b; // the positive face
+          const type = SLICE[pos.type];
+          out.push({ type, amt: pos.amt, t: Math.min(a.t, b.t), tEnd: Math.max(a.tEnd, b.tEnd) });
+          i++; continue;
+        }
+      }
+      out.push({ type: a.type, amt: a.amt, t: a.t, tEnd: a.tEnd });
+    }
+    out.forEach(o => { o.label = Cube.fmt(o.type, o.amt); });
+    return { tokens: out, cancels };
+  }
+  // sensor parts for a display move (user frame)
+  function parts(type, amt) {
+    amt = norm(amt); const s = amt === 3 ? -1 : amt; // 1, 2, -1
+    const neg = s === 2 ? 2 : -s;
+    switch (type) {
+      case 'M': return [{ face: 'R', amt: s }, { face: 'L', amt: neg }];
+      case 'E': return [{ face: 'U', amt: s }, { face: 'D', amt: neg }];
+      case 'S': return [{ face: 'B', amt: s }, { face: 'F', amt: neg }];
+      case 'r': return [{ face: 'L', amt: s }];
+      default: return [{ face: type, amt: s }];
+    }
+  }
+  const AXIS = { U: 1, D: 1, R: 0, L: 0, F: 2, B: 2 };
+  // Guided sequence follower (scramble, rewind, solution replay)
+  class Guide {
+    constructor(alg) { // alg: [{type, amt}] in centre-relative letters, or [{label, parts}]
+      this.tokens = alg.map(m => m.parts ? { label: m.label, parts: m.parts.map(p => ({ ...p, prog: 0, done: false })) }
+        : { label: Cube.fmt(m.type, m.amt), parts: parts(m.type, m.amt).map(p => ({ ...p, prog: 0, done: false })) });
+      this.i = 0; this.fix = [];
+      this.skip();
+    }
+    skip() { while (this.i < this.tokens.length && this.tokens[this.i].parts.every(p => p.done)) this.i++; }
+    get finished() { return this.i >= this.tokens.length && this.fix.length === 0; }
+    tokenState(j) { const t = this.tokens[j]; if (t.parts.every(p => p.done)) return 'done'; if (t.parts.some(p => p.done || p.prog)) return 'partial'; return j === this.i ? 'current' : 'todo'; }
+    fixText() { // compressed corrections
+      const out = []; for (let k = this.fix.length - 1; k >= 0; k--) { const f = this.fix[k]; const l = out[out.length - 1];
+        if (l && l.face === f.face) l.amt = norm(l.amt + f.d); else out.push({ face: f.face, amt: norm(f.d) }); }
+      return out.filter(o => o.amt).map(o => Cube.fmt(o.face, o.amt)).join(' ');
+    }
+    push(face, d) { // returns 'ok' | 'fix' | 'fixed'
+      if (this.fix.length) {
+        const top = this.fix[this.fix.length - 1];
+        if (top.face === face && top.d === d) { this.fix.pop(); return 'fixed'; }
+        this.fix.push({ face, d: -d }); return 'fix';
+      }
+      if (this.i >= this.tokens.length) { this.fix.push({ face, d: -d }); return 'fix'; }
+      const axis = AXIS[this.tokens[this.i].parts[0].face];
+      for (let j = this.i; j < this.tokens.length; j++) {
+        const tk = this.tokens[j];
+        if (!tk.parts.every(p => AXIS[p.face] === axis)) break;
+        for (const p of tk.parts) {
+          if (p.done || p.face !== face) continue;
+          if (p.amt === 2) {
+            if (p.prog === 0) { p.prog = d; this.skip(); return 'ok'; }
+            if (p.prog === d) { p.done = true; this.skip(); return 'ok'; }
+            p.prog = 0; return 'ok'; // undid the first quarter
+          }
+          if (p.amt === d) { p.done = true; this.skip(); return 'ok'; }
+        }
+      }
+      this.fix.push({ face, d: -d }); return 'fix';
+    }
+  }
+  // physical algorithm (slices change the orientation) -> what the sensor will report
+  function physToGuide(str) {
+    let O = { U: 'U', D: 'D', F: 'F', B: 'B', R: 'R', L: 'L' };
+    const sgn = a => (a === 3 ? -1 : a);
+    const rotXprime = o => ({ ...o, F: o.U, D: o.F, B: o.D, U: o.B }); // cube turned like L
+    const rotX = o => ({ ...o, U: o.F, B: o.U, D: o.B, F: o.D });      // cube turned like R
+    return Cube.parseAlg(str).map(m => {
+      const a = norm(m.amt), s = sgn(a), neg = s === 2 ? 2 : -s;
+      let ps;
+      if (m.type === 'M') { ps = [{ face: O.R, amt: s }, { face: O.L, amt: neg }]; for (let i = 0; i < a; i++) O = rotXprime(O); }
+      else if (m.type === 'r') { ps = [{ face: O.L, amt: s }]; for (let i = 0; i < a; i++) O = rotX(O); }
+      else if ('UDFBLR'.includes(m.type)) ps = [{ face: O[m.type], amt: s }];
+      else throw new Error('unsupported ' + m.type);
+      return { label: Cube.fmt(m.type, m.amt), parts: ps };
+    });
+  }
+  function invert(alg) { return alg.slice().reverse().map(m => ({ type: m.type, amt: norm(-m.amt) })); }
+  function randomScramble(n = 20, rnd = Math.random) {
+    const F = ['U', 'D', 'R', 'L', 'F', 'B']; const out = [];
+    while (out.length < n) {
+      const f = F[Math.floor(rnd() * 6)]; const a = 1 + Math.floor(rnd() * 3);
+      const l1 = out[out.length - 1], l2 = out[out.length - 2];
+      if (l1 && l1.type === f) continue;
+      if (l1 && l2 && OPP[l1.type] === f && l2.type === f) continue;
+      out.push({ type: f, amt: a });
+    }
+    return out;
+  }
+  return { reconstruct, parts, Guide, invert, randomScramble, norm, physToGuide };
+})();
+
+const api = { AES, crc16modbus, QIYI, Cube, FB, Recon };
+if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.RouxCore = api;
+})(typeof self !== 'undefined' ? self : this);
+
+</script>
+<script>
+'use strict';
+const { Cube, FB, Recon, QIYI } = RouxCore;
+const $ = id => document.getElementById(id);
+const fmtS = ms => (ms / 1000).toFixed(2).replace('.', ',') + ' s';
+const fmtS1 = ms => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2200); }
+function confirmBox(text, yes) {
+  $('modalText').textContent = text; $('modal').classList.add('show');
+  $('modalYes').onclick = () => { $('modal').classList.remove('show'); yes(); };
+  $('modalNo').onclick = () => $('modal').classList.remove('show');
+}
+
+// =================================================================
+// Cube session: model of the cube + synchronisation with the sensor
+// =================================================================
+const S = {
+  model: Cube.solved(),
+  trustCube: true,      // compare with the state the cube reports
+  verified: false,      // the cube's reported state has matched our model
+  streak: 0, mism: 0,
+  battery: null, lastTs: null, connected: false, name: '',
+  diag: '',
+};
+function emitMove(face, d, t, tc) {
+  S.model = Cube.apply(S.model, face, d === 1 ? 1 : 3);
+  App.onMove({ face, d, t, tc });
+}
+function onCubeHello(msg) {
+  const st = Cube.fromInternalFacelets(QIYI.facelets(msg));
+  S.battery = msg[35];
+  if (S.trustCube && Cube.isValid(st)) { S.model = st; }
+  S.lastTs = QIYI.ts(msg, 3);
+  render();
+}
+function onCubeMove(msg) {
+  const now = performance.now();
+  const ts = QIYI.ts(msg, 3), code = msg[34];
+  S.battery = msg[35];
+  if (!QIYI.CODES[code]) return;
+  const reported = Cube.fromInternalFacelets(QIYI.facelets(msg));
+  const repValid = Cube.isValid(reported);
+  const cur = { code, ts };
+  // candidate sequences: with moves recovered from the history (two possible layouts), or alone
+  const cands = [];
+  if (S.lastTs != null) for (const v of [0, 1]) {
+    const rec = QIYI.history(msg, v).filter(h => QIYI.CODES[h.code] && h.ts > S.lastTs && h.ts < ts).sort((a, b) => a.ts - b.ts);
+    if (rec.length) cands.push(rec.concat([cur]));
+  }
+  cands.push([cur]);
+  const sim = seq => seq.reduce((m, h) => { const [f, d] = QIYI.CODES[h.code]; return Cube.apply(m, QIYI.TO_USER[f], d === 1 ? 1 : 3); }, S.model);
+  let chosen = null;
+  if (S.trustCube && repValid) chosen = cands.find(seq => Cube.equal(sim(seq), reported));
+  const play = seq => seq.forEach(h => { const [f, d] = QIYI.CODES[h.code]; emitMove(QIYI.TO_USER[f], d, now - (ts - h.ts) * 1.6, h.ts * 1.6); });
+  if (chosen) {
+    S.streak++; S.mism = 0; if (S.streak >= 2) S.verified = true;
+    play(chosen);
+  } else {
+    play([cur]);
+    if (S.trustCube && repValid) {
+      if (S.verified) { S.model = reported; S.diag = 'Mouvement perdu récupéré (état resynchronisé).'; }
+      else if (++S.mism >= 3) { S.trustCube = false; S.diag = "L'état envoyé par le cube ne correspond pas : suivi par les mouvements seulement."; }
+    }
+  }
+  S.lastTs = ts;
+  renderConn();
+}
+
+// =================================================================
+// Bluetooth (QiYi / X-Man Tornado V4 AI) via Web Bluetooth
+// =================================================================
+const BT = {
+  SVC: '0000fff0-0000-1000-8000-00805f9b34fb', CHR: '0000fff6-0000-1000-8000-00805f9b34fb',
+  device: null, chr: null, queue: Promise.resolve(), helloWaiter: null, mfMac: [],
+  write(bytes) { this.queue = this.queue.then(() => this.chr.writeValue(bytes)).catch(e => console.warn(e)); return this.queue; },
+  onNotify(e) {
+    const v = e.target.value; const bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength).slice();
+    const msg = QIYI.decode(bytes);
+    if (!msg) return;
+    const op = msg[2];
+    if (op === 0x02) { BT.write(QIYI.ack(msg)); if (BT.helloWaiter) BT.helloWaiter(true); onCubeHello(msg); }
+    else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
+  },
+  async request() {
+    const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
+    try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
+    catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }
+  },
+  async connect() {
+    if (!navigator.bluetooth) { toast('Bluetooth indisponible : ouvre cette page dans Bluefy'); return; }
+    try {
+      this.device = await this.request();
+      this.device.addEventListener('gattserverdisconnected', () => { S.connected = false; S.diag = 'Cube déconnecté.'; render(); });
+      await this.setup();
+    } catch (e) { if (e.name !== 'NotFoundError') { S.diag = 'Connexion impossible : ' + e.message; render(); } }
+  },
+  async setup() {
+    S.name = this.device.name || '';
+    $('conn').textContent = 'Connexion…';
+    const server = await this.device.gatt.connect();
+    const svc = await server.getPrimaryService(this.SVC);
+    this.chr = await svc.getCharacteristic(this.CHR);
+    this.chr.addEventListener('characteristicvaluechanged', e => this.onNotify(e));
+    await this.chr.startNotifications();
+    this.readAdvert();
+    for (const mac of await this.macCandidates()) {
+      if (await this.tryHello(mac)) {
+        const macs = store.get('rfb.macs', {}); macs[S.name] = mac; store.set('rfb.macs', macs);
+        S.connected = true; S.mac = mac; S.diag = ''; S.verified = false; S.streak = 0; S.mism = 0; render(); toast('Cube connecté'); return;
+      }
+    }
+    S.diag = "Le cube ne répond pas. Saisis son adresse MAC dans les réglages, puis reconnecte.";
+    $('settings').open = true; render();
+  },
+  async reconnect() { if (!this.device) return this.connect(); try { await this.setup(); } catch (e) { S.diag = 'Reconnexion impossible : ' + e.message; render(); } },
+  readAdvert() {
+    try {
+      if (!this.device.watchAdvertisements) return;
+      this.device.addEventListener('advertisementreceived', ev => {
+        const dv = ev.manufacturerData && ev.manufacturerData.get(0x0504);
+        if (dv && dv.byteLength >= 6) {
+          const b = Array.from(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)).slice(-6);
+          const h = a => a.map(x => x.toString(16).padStart(2, '0').toUpperCase()).join(':');
+          this.mfMac = [h(b.slice().reverse()), h(b)];
+        }
+      });
+      this.device.watchAdvertisements().catch(() => {});
+    } catch (e) {}
+  },
+  async macCandidates() {
+    const out = [];
+    const manual = store.get('rfb.manualMac', '');
+    const saved = store.get('rfb.macs', {})[S.name];
+    if (saved) out.push(saved);
+    if (manual) out.push(manual);
+    const m = /([0-9A-F]{2})([0-9A-F]{2})$/i.exec(S.name);
+    if (m) out.push(('CC:A3:00:00:' + m[1] + ':' + m[2]).toUpperCase());
+    await new Promise(r => setTimeout(r, this.device.watchAdvertisements ? 1500 : 0));
+    out.push(...this.mfMac);
+    return [...new Set(out)].filter(x => /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(x));
+  },
+  tryHello(mac) {
+    return new Promise(res => {
+      const timer = setTimeout(() => { this.helloWaiter = null; res(false); }, 2500);
+      this.helloWaiter = ok => { clearTimeout(timer); this.helloWaiter = null; res(ok); };
+      this.write(QIYI.hello(mac));
+    });
+  },
+};
+
+// =================================================================
+// Trainer
+// =================================================================
+const DIFF = { all: [4, 99], short: [4, 5], mid: [6, 6], long7: [7, 7], long: [8, 99] };
+const App = {
+  phase: 'idle',        // idle | scrambling | free | inspect | solve | done | rewinding | replay | replayDone
+  guide: null, scramble: null, startState: null, since: [], caseId: null,
+  inspT0: 0, t0: 0, solveQ: [], sub: {}, result: null, optimal: null, reveal: false,
+  after: null, replaySol: null, ready: false, showNet: false,
+  diff: store.get('rfb.diff', 'all'),
+  pauseThr: store.get('rfb.pauseThr', 1.0),
+  history: store.get('rfb.history', []),
+
+  newScramble() {
+    const [lo, hi] = DIFF[this.diff];
+    let alg, st, len, tries = 0;
+    do { alg = Recon.randomScramble(20); st = Cube.applyAlg(S.model, alg); len = FB.solve(st, 1).length; tries++; }
+    while ((len < lo || len > hi) && tries < 400);
+    this.scramble = alg; this.guide = new Recon.Guide(alg); this.phase = 'scrambling';
+    this.caseId = Date.now().toString(36); this.reveal = false; this.result = null;
+    render();
+  },
+  freeScramble() { this.phase = 'free'; this.scramble = null; this.caseId = Date.now().toString(36); this.result = null; render(); },
+  beginInspect(note) {
+    this.startState = S.model.slice(); this.since = [];
+    if (FB.isSolved(S.model)) { this.phase = 'idle'; toast('Le bloc est déjà fait : nouveau mélange'); render(); return; }
+    this.optimal = FB.solve(this.startState, 5);
+    this.phase = 'inspect'; this.inspT0 = performance.now(); this.reveal = false; this.note = note || '';
+    render(); tick();
+  },
+  rewind(then, sol) {
+    const rec = Recon.reconstruct(this.since).tokens;
+    this.after = then; this.replaySol = sol || null;
+    if (!rec.length) { this.afterRewind(); return; }
+    this.guide = new Recon.Guide(Recon.invert(rec.map(t => ({ type: t.type, amt: t.amt }))));
+    this.phase = 'rewinding'; render();
+  },
+  afterRewind() {
+    const back = Cube.equal(S.model, this.startState);
+    if (!back) toast("Le cube n'est pas revenu exactement au même état");
+    if (this.after === 'retry') { this.beginInspect(back ? 'Même cas, nouvel essai' : ''); return; }
+    if (this.after === 'replay') {
+      this.since = []; this.guide = new Recon.Guide(Recon.physToGuide(this.replaySol)); this.phase = 'replay'; render();
+    }
+  },
+  onMove(q) {
+    if (this.startState) this.since.push(q);
+    switch (this.phase) {
+      case 'scrambling': case 'rewinding': case 'replay': {
+        this.guide.push(q.face, q.d);
+        if (this.guide.finished) {
+          if (this.phase === 'scrambling') this.beginInspect();
+          else if (this.phase === 'rewinding') this.afterRewind();
+          else { this.phase = 'replayDone'; render(); }
+          return;
+        }
+        render(); break;
+      }
+      case 'inspect':
+        this.phase = 'solve'; this.t0 = q.t; this.inspection = q.t - this.inspT0; this.solveQ = [q]; this.sub = {};
+        this.check(q); render(); tick(); break;
+      case 'solve':
+        this.solveQ.push(q); this.check(q); break;
+      default: render();
+    }
+  },
+  check(q) {
+    const loc = FB.locate(S.model), rel = q.t - this.t0;
+    if (this.sub.dl == null && FB.subsetSolved(loc, [2])) this.sub.dl = rel;
+    if (this.sub.sq == null) {
+      if (FB.subsetSolved(loc, [1, 2, 4])) { this.sub.sq = rel; this.sub.sqWhich = 'arrière'; }
+      else if (FB.subsetSolved(loc, [0, 2, 3])) { this.sub.sq = rel; this.sub.sqWhich = 'avant'; }
+    }
+    if (FB.subsetSolved(loc, [0, 1, 2, 3, 4])) this.finish(q);
+  },
+  finish(q) {
+    const time = q.t - this.t0;
+    const { tokens, cancels } = Recon.reconstruct(this.solveQ);
+    const thr = this.pauseThr * 1000;
+    const pauses = [];
+    for (let j = 1; j < tokens.length; j++) { const g = tokens[j].t - tokens[j - 1].tEnd; if (g > thr) pauses.push({ before: j, label: tokens[j].label, dur: g }); }
+    const pTot = pauses.reduce((a, p) => a + p.dur, 0);
+    const res = {
+      id: Date.now(), date: new Date().toISOString(), caseId: this.caseId,
+      scramble: this.scramble ? this.scramble.map(m => Cube.fmt(m.type, m.amt)).join(' ') : null,
+      start: this.startState.join(''),
+      inspection: Math.round(this.inspection), time: Math.round(time), moves: tokens.length,
+      tps: time >= 300 ? +(tokens.length / (time / 1000)).toFixed(2) : null, cancels,
+      pauses: pauses.map(p => ({ before: p.before, label: p.label, ms: Math.round(p.dur) })), pauseTotal: Math.round(pTot),
+      recon: tokens.map(t => t.label).join(' '),
+      timeline: tokens.map(t => [t.label, Math.round(t.t - this.t0)]),
+      sub: { dl: this.sub.dl != null ? Math.round(this.sub.dl) : null, square: this.sub.sq != null ? Math.round(this.sub.sq) : null, squareSide: this.sub.sqWhich || null },
+      optimal: this.optimal ? this.optimal.length : null, optimalSolutions: this.optimal ? this.optimal.solutions : [],
+    };
+    this.result = res; this.history.push(res);
+    if (this.history.length > 1000) this.history.shift();
+    store.set('rfb.history', this.history);
+    this.phase = 'done'; render(); renderHistory();
+  },
+  abort() { this.phase = 'idle'; render(); },
+};
+
+// =================================================================
+// Rendering
+// =================================================================
+function tick() {
+  if (App.phase !== 'inspect' && App.phase !== 'solve') return;
+  const el = $('clock');
+  if (el) el.textContent = App.phase === 'inspect' ? fmtS1(performance.now() - App.inspT0) : fmtS1(performance.now() - App.t0);
+  requestAnimationFrame(tick);
+}
+function renderConn() {
+  const c = $('conn');
+  if (!S.connected) { c.className = 'pill'; c.textContent = 'Cube non connecté'; return; }
+  c.className = 'pill ' + (S.trustCube ? 'on' : 'warn');
+  c.textContent = 'Connecté' + (S.battery != null ? ' · ' + S.battery + ' %' : '') + (S.trustCube ? (S.verified ? ' · synchro ✓' : '') : ' · ⚠');
+  $('diag').textContent = S.diag;
+  if (App.showNet) renderNet();
+}
+function seqHTML(g) {
+  return '<div class="seq">' + g.tokens.map((t, j) => `<span class="mv ${g.tokenState(j)}">${esc(t.label)}</span>`).join('') + '</div>' +
+    (g.fix.length ? `<div class="fix">Corrige d'abord :<span>${esc(g.fixText())}</span></div>` : '');
+}
+function render() {
+  renderConn();
+  const b = [];
+  if (!navigator.bluetooth) b.push('<div class="banner warn">Ce navigateur ne gère pas le Bluetooth web. Sur iPhone, ouvre cette page dans <b>Bluefy</b>. Le mode test (réglages) fonctionne sans cube.</div>');
+  if (S.diag) b.push('<div class="banner warn">' + esc(S.diag) + '</div>');
+  if (!S.trustCube) b.push('<div class="banner warn">Suivi par les mouvements uniquement. Si l\'app se trompe, résous ton cube puis touche « Mon cube est résolu » dans les réglages.</div>');
+  $('banners').innerHTML = b.join('');
+  const m = $('main'); let h = '';
+  if (!App.ready) { m.innerHTML = '<div class="card"><p class="mute">Préparation du solveur…</p></div>'; return; }
+  const connectBtn = !S.connected ? `<button class="primary" onclick="BT.${BT.device ? 'reconnect' : 'connect'}()">${BT.device ? 'Reconnecter le cube' : 'Connecter le cube'}</button>` : '';
+  switch (App.phase) {
+    case 'idle':
+      h = `<div class="card"><h2>Nouvel essai</h2>
+        ${connectBtn ? `<div class="row" style="margin-bottom:10px">${connectBtn}</div>` : ''}
+        <label class="f">Longueur du bloc optimal</label>
+        <select id="diffSel" onchange="App.diff=this.value;store.set('rfb.diff',this.value)">
+          <option value="all">Tous les mélanges</option><option value="short">Courts (4–5 coups)</option>
+          <option value="mid">Moyens (6 coups)</option><option value="long7">7 coups</option><option value="long">Longs (8 coups et +)</option></select>
+        <div class="row" style="margin-top:12px"><button class="primary" onclick="App.newScramble()">Nouveau mélange</button></div>
+        <div class="row" style="margin-top:8px"><button class="small" onclick="App.freeScramble()">Je mélange moi-même</button></div>
+        <p class="hint">Le mélange part de l'état actuel du cube : inutile de le résoudre entre deux essais.</p></div>`;
+      break;
+    case 'scrambling': case 'rewinding': case 'replay': {
+      const title = { scrambling: 'Mélange', rewinding: 'Retour au même cas', replay: 'Exécute la solution' }[App.phase];
+      const hint = { scrambling: 'Tiens le cube blanc en bas, vert devant. Les mouvements se cochent tout seuls.',
+        rewinding: 'Défais tes mouvements pour revenir au cas de départ.', replay: 'Observe comment les pièces se rassemblent à chaque coup.' }[App.phase];
+      h = `<div class="card"><h2>${title}</h2>${seqHTML(App.guide)}<p class="hint">${hint}</p>
+        <div class="row" style="margin-top:12px"><button class="small" onclick="App.abort()">Annuler</button></div></div>`;
+      break;
+    }
+    case 'free':
+      h = `<div class="card"><h2>Mélange libre</h2><p>Mélange ton cube comme tu veux, puis touche le bouton.</p>
+        <div class="row"><button class="primary" onclick="App.beginInspect()">Mélange terminé</button></div>
+        <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Annuler</button></div></div>`;
+      break;
+    case 'inspect':
+      h = `<div class="card"><h2>Inspection${App.note ? ' · ' + esc(App.note) : ''}</h2>
+        <p>Planifie ton premier bloc. Le chrono démarre à ton premier mouvement.</p>
+        <div class="big mute" id="clock">0,0 s</div>
+        <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Annuler</button></div></div>`;
+      break;
+    case 'solve':
+      h = `<div class="card"><h2>Premier bloc</h2><div class="big" id="clock">0,0 s</div>
+        <p class="hint">Le chrono s'arrête dès que le bloc est complet.</p>
+        <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Abandonner</button></div></div>`;
+      break;
+    case 'done': h = resultHTML(App.result); break;
+    case 'replayDone':
+      h = `<div class="card"><h2>Solution exécutée</h2>
+        <p>${FB.isSolved(S.model) ? 'Bloc complet ✓' : "Le bloc n'est pas complet : un mouvement a dû être mal lu."}</p>
+        <div class="row"><button onclick="App.rewind('retry')">Refaire le cas moi-même</button></div>
+        <div class="row" style="margin-top:8px"><button class="primary" onclick="App.newScramble()">Nouveau mélange</button></div></div>`;
+      break;
+  }
+  m.innerHTML = h;
+  const sel = $('diffSel'); if (sel) sel.value = App.diff;
+}
+function resultHTML(r) {
+  const diff = r.optimal != null ? r.moves - r.optimal : null;
+  let recon = '';
+  const pauseAt = {}; r.pauses.forEach(p => pauseAt[p.before] = p.ms);
+  const FC = { U: 'Y', D: 'W', F: 'G', B: 'B', L: 'R', R: 'O' };
+  r.recon.split(' ').filter(Boolean).forEach((t, j) => { if (pauseAt[j]) recon += `<span class="p">${fmtS1(pauseAt[j])}</span>`;
+    const c = FC[t[0]]; recon += (c ? `<span class="tk" style="border-color:${COLOR[c]}">${esc(t)}</span>` : `<span class="tk">${esc(t)}</span>`) + ' '; });
+  const longest = r.pauses.slice().sort((a, b) => b.ms - a.ms)[0];
+  const steps = [];
+  if (r.sub.dl != null) steps.push(['Arête blanc-rouge en place', r.sub.dl]);
+  if (r.sub.square != null) steps.push(['1er carré (' + r.sub.squareSide + ')', r.sub.square]);
+  steps.push(['Bloc complet', r.time]);
+  steps.sort((a, b) => a[1] - b[1]);
+  const sols = App.optimal ? App.optimal.solutions : r.optimalSolutions;
+  return `<div class="card"><h2>Résultat</h2>
+    <div class="big">${fmtS(r.time)}</div>
+    <div class="stats">
+      <div class="stat"><b>${r.moves}${diff != null ? ` <span class="mute" style="font-size:15px">(+${diff})</span>` : ''}</b><span>coups · optimal ${r.optimal ?? '?'}</span></div>
+      <div class="stat"><b>${r.tps != null ? String(r.tps).replace('.', ',') : '–'}</b><span>coups / seconde</span></div>
+      <div class="stat"><b>${fmtS1(r.inspection)}</b><span>inspection</span></div>
+      <div class="stat"><b>${r.pauses.length ? fmtS1(r.pauseTotal) : '0'}</b><span>${r.pauses.length} pause${r.pauses.length > 1 ? 's' : ''} &gt; ${String(App.pauseThr).replace('.', ',')} s${longest ? ' · max ' + fmtS1(longest.ms) : ''}</span></div>
+    </div>
+    <h2 style="margin-top:14px">Étapes repérées</h2>
+    <ul class="steps">${steps.map(s => `<li><span>${s[0]}</span><b>${fmtS1(s[1])}</b></li>`).join('')}</ul>
+    <h2 style="margin-top:16px">Ta solution</h2>
+    <div class="recon">${recon || '<span class="mute">—</span>'}</div>
+    <p class="hint">Pauses en rouge, juste avant le mouvement qui a suivi. Chaque lettre désigne la face d'après la couleur de son centre (soulignée) : U jaune, D blanc, F vert, B bleu, L rouge, R orange. Après un M ou un r, les centres ont tourné, donc une même face peut changer de lettre ; un r apparaît comme L.${r.cancels ? ` ${r.cancels} quart${r.cancels > 1 ? 's' : ''} de tour annulé${r.cancels > 1 ? 's' : ''} (aller-retour).` : ''}</p>
+    </div>
+    <div class="card"><h2>Solutions optimales</h2>
+    ${App.reveal ? sols.map((s, i) => `<div class="sol"><code>${esc(s)}</code><button class="small" onclick="App.rewind('replay', App.optimal.solutions[${i}])">Essayer</button></div>`).join('')
+      + '<p class="hint">« Essayer » te fait d\'abord défaire tes mouvements, puis te guide coup par coup.</p>'
+      : `<p class="mute">Le bloc optimal fait ${r.optimal} coups. Réfléchis d'abord à ce que tu aurais pu faire, puis affiche-les.</p>
+         <div class="row"><button onclick="App.reveal=true;render()">Afficher les solutions</button></div>`}
+    </div>
+    <div class="row" style="margin-bottom:12px"><button onclick="App.rewind('retry')">Refaire ce cas</button><button class="primary" onclick="App.newScramble()">Nouveau mélange</button></div>`;
+}
+function avg(list, f) { const v = list.map(f).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
+function renderHistory() {
+  const H = App.history;
+  if (!H.length) { $('history').innerHTML = ''; return; }
+  const block = n => { const l = H.slice(-n); return { n: l.length, t: avg(l, r => r.time), m: avg(l, r => r.moves), d: avg(l, r => r.optimal != null ? r.moves - r.optimal : null), i: avg(l, r => r.inspection) }; };
+  const rows = [block(5), block(12), block(50)].filter((b, i, a) => i === 0 || b.n > a[i - 1].n);
+  const f1 = x => x == null ? '–' : x.toFixed(1).replace('.', ',');
+  $('history').innerHTML = `<div class="card"><h2>Progression</h2>
+    <table><tr><th>Moyenne</th><th>Temps</th><th>Coups</th><th>Écart opt.</th><th>Inspect.</th></tr>
+    ${rows.map(b => `<tr><td>${b.n === 1 ? 'Dernier' : b.n + ' derniers'}</td><td>${fmtS1(b.t)}</td><td>${f1(b.m)}</td><td>+${f1(b.d)}</td><td>${fmtS1(b.i)}</td></tr>`).join('')}</table>
+    <h2 style="margin-top:16px">Derniers essais</h2>
+    <table><tr><th>Quand</th><th>Temps</th><th>Coups</th><th>Opt.</th><th>Pauses</th></tr>
+    ${H.slice(-10).reverse().map(r => `<tr><td>${new Date(r.date).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td><td>${fmtS(r.time)}</td><td>${r.moves}</td><td>${r.optimal ?? '–'}</td><td>${r.pauses.length}</td></tr>`).join('')}</table>
+    <p class="hint">${H.length} essai${H.length > 1 ? 's' : ''} enregistré${H.length > 1 ? 's' : ''} sur cet appareil.</p></div>`;
+}
+const COLOR = { W: 'var(--cW)', Y: 'var(--cY)', G: 'var(--cG)', B: 'var(--cB)', R: 'var(--cR)', O: 'var(--cO)' };
+function renderNet() {
+  const n = Cube.net(S.model);
+  const cells = Array.from({ length: 9 * 12 }, () => null);
+  const put = (f, r0, c0) => n[f].forEach((col, k) => { cells[(r0 + Math.floor(k / 3)) * 12 + c0 + (k % 3)] = col; });
+  put('U', 0, 3); put('L', 3, 0); put('F', 3, 3); put('R', 3, 6); put('B', 3, 9); put('D', 6, 3);
+  $('netBox').innerHTML = '<div class="net">' + cells.map(c => c ? `<i style="background:${COLOR[c]}"></i>` : '<i class="x"></i>').join('') + '</div>' +
+    '<p class="hint">Vue dépliée (jaune en haut, vert au centre). Elle doit correspondre à ton cube.</p>';
+}
+
+// =================================================================
+// Settings & tools
+// =================================================================
+$('pauseThr').value = App.pauseThr;
+$('pauseThr').onchange = e => { const v = parseFloat(String(e.target.value).replace(',', '.')); if (v > 0) { App.pauseThr = v; store.set('rfb.pauseThr', v); } };
+$('macInput').value = store.get('rfb.manualMac', '');
+$('macSave').onclick = () => {
+  const v = $('macInput').value.trim().toUpperCase();
+  if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(v)) { toast('Format attendu : CC:A3:00:00:XX:XX'); return; }
+  store.set('rfb.manualMac', v); toast('Adresse enregistrée'); if (BT.device) BT.reconnect();
+};
+$('resetSolved').onclick = () => {
+  S.model = Cube.solved();
+  if (S.connected && S.trustCube) { S.trustCube = false; S.diag = 'Suivi par les mouvements à partir de maintenant.'; }
+  App.phase = 'idle'; toast('Cube marqué comme résolu'); render();
+};
+$('toggleNet').onclick = () => { App.showNet = !App.showNet; $('toggleNet').textContent = App.showNet ? 'Masquer le cube' : 'Afficher le cube'; if (App.showNet) renderNet(); else $('netBox').innerHTML = ''; };
+$('simGo').onclick = () => {
+  let alg; try { alg = Recon.physToGuide($('simInput').value); } catch (e) { toast('Notation non reconnue (U D F B L R M r)'); return; }
+  let t = performance.now();
+  for (const m of alg) {
+    for (const p of m.parts) {
+      const qs = p.amt === 2 ? [1, 1] : [p.amt];
+      for (const d of qs) { emitMove(p.face, d, t, null); t += 15; }
+    }
+    t += 400;
+  }
+  $('simInput').value = ''; render();
+};
+$('exportBtn').onclick = async () => {
+  const data = JSON.stringify({ app: 'Roux premier bloc', version: 1, convention: 'blanc en bas, vert devant, bloc rouge à gauche ; notation dans ce repère ; start = 54 couleurs', attempts: App.history.slice(-50) });
+  const box = $('exportBox'); box.style.display = 'block'; box.value = data;
+  try { await navigator.clipboard.writeText(data); toast('Copié : colle-le dans ta conversation avec Claude'); }
+  catch (e) { box.focus(); box.select(); toast('Sélectionne le texte et copie-le'); }
+};
+$('clearBtn').onclick = () => confirmBox("Effacer tout l'historique des essais sur cet appareil ?", () => { App.history = []; store.set('rfb.history', []); renderHistory(); toast('Historique effacé'); });
+
+render(); renderHistory();
+setTimeout(() => { FB.buildTables(); App.ready = true; render(); }, 60);
+</script>
+</body>
+</html>

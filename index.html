@@ -672,7 +672,7 @@ const BT = {
   write(bytes) {
     this.queue = this.queue.then(async () => {
       const c = this.chr, pr = c.properties || {};
-      if (pr.write === false && pr.writeWithoutResponse && c.writeValueWithoutResponse) return c.writeValueWithoutResponse(bytes);
+      if (!pr.write && pr.writeWithoutResponse && c.writeValueWithoutResponse) return c.writeValueWithoutResponse(bytes);
       return c.writeValue(bytes);
     }).catch(e => this.log('écriture échouée : ' + (e && e.message)));
     return this.queue;
@@ -688,7 +688,7 @@ const BT = {
     else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
   },
   async request() {
-    this.log('version 3 · navigateur : ' + navigator.userAgent.slice(0, 80));
+    this.log('version 4 · navigateur : ' + navigator.userAgent.slice(0, 80));
     const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
     try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
     catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }
@@ -711,7 +711,7 @@ const BT = {
     for (const mac of cands) {
       tried.push(mac);
       if (!this.device.gatt.connected) { this.log('reconnexion GATT'); try { await this.openGatt(); } catch (e) { this.log('échec GATT : ' + e.message); continue; } }
-      this.log('hello avec ' + mac);
+      this.log('hello avec ' + mac + (this.chr.writeValueWithoutResponse && !(this.chr.properties || {}).write ? ' (sans réponse)' : ''));
       if (await this.tryHello(mac)) {
         const macs = store.get('rfb.macs', {}); macs[S.name] = mac; store.set('rfb.macs', macs);
         S.connected = true; S.mac = mac; S.diag = ''; S.verified = false; S.streak = 0; S.mism = 0; render(); toast('Cube connecté'); return;
@@ -783,7 +783,8 @@ const BT = {
     // most likely first: MACs starting with CC:A3 read from the advertisement
     out.push(...this.mfMacs.filter(m => m.startsWith('CC:A3')), ...this.mfMacs);
     const m = /([0-9A-F]{2})([0-9A-F]{2})$/i.exec(S.name);
-    if (m) out.push(('CC:A3:00:00:' + m[1] + ':' + m[2]).toUpperCase(), ('CC:A3:00:00:' + m[2] + ':' + m[1]).toUpperCase());
+    // the advertisement holds the MAC reversed (e.g. EB 12 00 00 A6 CC -> CC:A6:00:00:12:EB); name ends with its last 2 bytes
+    if (m) for (const pre of ['CC:A6:00:00:', 'CC:A3:00:00:']) out.push((pre + m[1] + ':' + m[2]).toUpperCase());
     return [...new Set(out)].filter(x => /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(x));
   },
   tryHello(mac) {

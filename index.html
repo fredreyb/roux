@@ -864,7 +864,6 @@ const App = {
   },
   check(q) {
     const loc = FB.locate(S.model), rel = q.t - this.t0;
-    if (this.sub.dl == null && FB.subsetSolved(loc, [2])) this.sub.dl = rel;
     if (this.sub.sq == null) {
       if (FB.subsetSolved(loc, [1, 2, 4])) { this.sub.sq = rel; this.sub.sqWhich = 'arrière'; }
       else if (FB.subsetSolved(loc, [0, 2, 3])) { this.sub.sq = rel; this.sub.sqWhich = 'avant'; }
@@ -985,7 +984,6 @@ function resultHTML(r) {
     const c = FC[t[0]]; recon += (c ? `<span class="tk" style="border-color:${COLOR[c]}">${esc(t)}</span>` : `<span class="tk">${esc(t)}</span>`) + ' '; });
   const longest = r.pauses.slice().sort((a, b) => b.ms - a.ms)[0];
   const steps = [];
-  if (r.sub.dl != null) steps.push(['Arête blanc-rouge en place', r.sub.dl]);
   if (r.sub.square != null) steps.push(['1er carré (' + r.sub.squareSide + ')', r.sub.square]);
   steps.push(['Bloc complet', r.time]);
   steps.sort((a, b) => a[1] - b[1]);

@@ -100,6 +100,9 @@ textarea{width:100%;height:120px;font:12px ui-monospace,Menlo,monospace;border-r
     <div class="row"><button class="small" id="exportBtn">Copier mes séances</button><button class="small" id="clearBtn">Effacer l'historique</button></div>
     <textarea id="exportBox" style="display:none" readonly></textarea>
     <p class="hint" id="diag"></p>
+    <label class="f">Journal de connexion</label>
+    <div class="row"><button class="small" id="logCopy">Copier le journal</button></div>
+    <textarea id="btLog" readonly></textarea>
   </details>
 </div>
 
@@ -664,16 +667,28 @@ function onCubeMove(msg) {
 const BT = {
   SVC: '0000fff0-0000-1000-8000-00805f9b34fb', CHR: '0000fff6-0000-1000-8000-00805f9b34fb',
   device: null, chr: null, queue: Promise.resolve(), helloWaiter: null, listening: null,
-  write(bytes) { this.queue = this.queue.then(() => this.chr.writeValue(bytes)).catch(e => console.warn(e)); return this.queue; },
+  logs: [], nNotif: 0, nBad: 0,
+  log(t) { const l = ((performance.now() / 1000).toFixed(1)) + 's ' + t; this.logs.push(l); if (this.logs.length > 80) this.logs.shift(); const el = $('btLog'); if (el) el.value = this.logs.join('\n'); },
+  write(bytes) {
+    this.queue = this.queue.then(async () => {
+      const c = this.chr, pr = c.properties || {};
+      if (pr.write === false && pr.writeWithoutResponse && c.writeValueWithoutResponse) return c.writeValueWithoutResponse(bytes);
+      return c.writeValue(bytes);
+    }).catch(e => this.log('écriture échouée : ' + (e && e.message)));
+    return this.queue;
+  },
   onNotify(e) {
     const v = e.target.value; const bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength).slice();
     const msg = QIYI.decode(bytes);
-    if (!msg) return;
+    BT.nNotif++;
+    if (!msg) { BT.nBad++; if (BT.nBad <= 3) BT.log('message illisible (' + bytes.length + ' octets)'); return; }
+    if (msg[2] === 0x02 || BT.nNotif <= 3) BT.log('message cube type 0x' + msg[2].toString(16) + ' (' + msg.length + ' octets)');
     const op = msg[2];
     if (op === 0x02) { BT.write(QIYI.ack(msg)); if (BT.helloWaiter) BT.helloWaiter(true); onCubeHello(msg); }
     else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
   },
   async request() {
+    this.log('version 3 · navigateur : ' + navigator.userAgent.slice(0, 80));
     const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
     try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
     catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }
@@ -695,14 +710,15 @@ const BT = {
     const cands = this.macCandidates(), tried = [];
     for (const mac of cands) {
       tried.push(mac);
-      if (!this.device.gatt.connected) { try { await this.openGatt(); } catch (e) { continue; } }
+      if (!this.device.gatt.connected) { this.log('reconnexion GATT'); try { await this.openGatt(); } catch (e) { this.log('échec GATT : ' + e.message); continue; } }
+      this.log('hello avec ' + mac);
       if (await this.tryHello(mac)) {
         const macs = store.get('rfb.macs', {}); macs[S.name] = mac; store.set('rfb.macs', macs);
         S.connected = true; S.mac = mac; S.diag = ''; S.verified = false; S.streak = 0; S.mism = 0; render(); toast('Cube connecté'); return;
       }
     }
     S.diag = 'Le cube ne répond pas. Nom : ' + S.name + ' · signal : ' + (this.mfHex || 'non lu') + ' · adresses essayées : ' + (tried.join(', ') || 'aucune') +
-      '. Envoie ce message à Claude, ou saisis l\'adresse MAC dans les réglages puis reconnecte.';
+      ' · messages reçus : ' + this.nNotif + '. Ouvre « Réglages et outils », copie le journal de connexion et envoie-le à Claude.';
     $('settings').open = true; render();
   },
   async openGatt() {
@@ -711,6 +727,8 @@ const BT = {
     this.chr = await svc.getCharacteristic(this.CHR);
     if (this.listening !== this.chr) { this.chr.addEventListener('characteristicvaluechanged', e => this.onNotify(e)); this.listening = this.chr; }
     await this.chr.startNotifications();
+    const pr = this.chr.properties || {};
+    this.log('caractéristique prête (write=' + pr.write + ', sansRéponse=' + pr.writeWithoutResponse + ', notify=' + pr.notify + ')');
   },
   async reconnect() {
     if (!this.device) return this.connect();
@@ -722,15 +740,21 @@ const BT = {
     // csTimer's approach: watch the advertisement, read manufacturer data under QiYi's company id 0x0504
     return new Promise(resolve => {
       const dev = this.device;
-      if (!dev || !dev.watchAdvertisements) { resolve(); return; }
+      if (!dev || !dev.watchAdvertisements) { this.log('watchAdvertisements absent'); resolve(); return; }
+      this.log('lecture du signal…'); let nAdv = 0;
       let done = false, ctrl = null;
       const finish = () => { if (done) return; done = true; dev.removeEventListener('advertisementreceived', onAdv); try { ctrl && ctrl.abort(); } catch (e) {} try { dev.unwatchAdvertisements && dev.unwatchAdvertisements(); } catch (e) {} resolve(); };
       const onAdv = ev => {
         try {
-          const md = ev.manufacturerData; if (!md || !md.size) return;
-          let dv = md.get(0x0504), cic = 0x0504;
-          if (!dv) { for (const [k, v] of md) { dv = v; cic = k; break; } }
-          if (!dv) return;
+          nAdv++;
+          const md = ev.manufacturerData;
+          const entries = [];
+          if (md && typeof md.forEach === 'function') md.forEach((v, k) => entries.push([+k, v]));
+          else if (md && typeof md === 'object') for (const k in md) entries.push([+k, md[k]]);
+          if (nAdv <= 3) this.log('signal reçu : nom=' + (ev.name || '?') + ' données fabricant=' + (entries.map(e => '0x' + e[0].toString(16)).join(',') || 'aucune'));
+          if (!entries.length) return;
+          let [cic, dv] = entries.find(e => e[0] === 0x0504) || entries[0];
+          if (dv && !(dv instanceof DataView)) dv = dv.buffer ? new DataView(dv.buffer, dv.byteOffset || 0, dv.byteLength) : new DataView(Uint8Array.from(dv).buffer);
           const b = Array.from(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
           const hx = a => a.map(x => x.toString(16).padStart(2, '0').toUpperCase());
           this.mfHex = '0x' + cic.toString(16).padStart(4, '0') + ' ' + hx(b).join(' ');
@@ -745,7 +769,7 @@ const BT = {
       try {
         ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const p = ctrl ? dev.watchAdvertisements({ signal: ctrl.signal }) : dev.watchAdvertisements();
-        Promise.resolve(p).catch(() => finish());
+        Promise.resolve(p).then(() => this.log('écoute du signal active')).catch(e => { this.log('watchAdvertisements refusé : ' + (e && e.message)); finish(); });
       } catch (e) { finish(); return; }
       setTimeout(finish, 6000);
     });
@@ -759,7 +783,7 @@ const BT = {
     // most likely first: MACs starting with CC:A3 read from the advertisement
     out.push(...this.mfMacs.filter(m => m.startsWith('CC:A3')), ...this.mfMacs);
     const m = /([0-9A-F]{2})([0-9A-F]{2})$/i.exec(S.name);
-    if (m) out.push(('CC:A3:00:00:' + m[1] + ':' + m[2]).toUpperCase());
+    if (m) out.push(('CC:A3:00:00:' + m[1] + ':' + m[2]).toUpperCase(), ('CC:A3:00:00:' + m[2] + ':' + m[1]).toUpperCase());
     return [...new Set(out)].filter(x => /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(x));
   },
   tryHello(mac) {
@@ -1047,6 +1071,7 @@ $('exportBtn').onclick = async () => {
   try { await navigator.clipboard.writeText(data); toast('Copié : colle-le dans ta conversation avec Claude'); }
   catch (e) { box.focus(); box.select(); toast('Sélectionne le texte et copie-le'); }
 };
+$('logCopy').onclick = async () => { const t = BT.logs.join('\n'); $('btLog').value = t; try { await navigator.clipboard.writeText(t); toast('Journal copié'); } catch (e) { $('btLog').focus(); $('btLog').select(); toast('Sélectionne le texte et copie-le'); } };
 $('clearBtn').onclick = () => confirmBox("Effacer tout l'historique des essais sur cet appareil ?", () => { App.history = []; store.set('rfb.history', []); renderHistory(); toast('Historique effacé'); });
 
 render(); renderHistory();

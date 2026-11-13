@@ -663,7 +663,7 @@ function onCubeMove(msg) {
 // =================================================================
 const BT = {
   SVC: '0000fff0-0000-1000-8000-00805f9b34fb', CHR: '0000fff6-0000-1000-8000-00805f9b34fb',
-  device: null, chr: null, queue: Promise.resolve(), helloWaiter: null, mfMac: [],
+  device: null, chr: null, queue: Promise.resolve(), helloWaiter: null, listening: null,
   write(bytes) { this.queue = this.queue.then(() => this.chr.writeValue(bytes)).catch(e => console.warn(e)); return this.queue; },
   onNotify(e) {
     const v = e.target.value; const bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength).slice();
@@ -683,52 +683,83 @@ const BT = {
     try {
       this.device = await this.request();
       this.device.addEventListener('gattserverdisconnected', () => { S.connected = false; S.diag = 'Cube déconnecté.'; render(); });
+      $('conn').textContent = 'Lecture du signal…';
+      await this.readAdvert(); // must happen BEFORE connecting: a connected cube stops advertising
       await this.setup();
     } catch (e) { if (e.name !== 'NotFoundError') { S.diag = 'Connexion impossible : ' + e.message; render(); } }
   },
   async setup() {
-    S.name = this.device.name || '';
+    S.name = (this.device.name || '').trim();
     $('conn').textContent = 'Connexion…';
-    const server = await this.device.gatt.connect();
-    const svc = await server.getPrimaryService(this.SVC);
-    this.chr = await svc.getCharacteristic(this.CHR);
-    this.chr.addEventListener('characteristicvaluechanged', e => this.onNotify(e));
-    await this.chr.startNotifications();
-    this.readAdvert();
-    for (const mac of await this.macCandidates()) {
+    await this.openGatt();
+    const cands = this.macCandidates(), tried = [];
+    for (const mac of cands) {
+      tried.push(mac);
+      if (!this.device.gatt.connected) { try { await this.openGatt(); } catch (e) { continue; } }
       if (await this.tryHello(mac)) {
         const macs = store.get('rfb.macs', {}); macs[S.name] = mac; store.set('rfb.macs', macs);
         S.connected = true; S.mac = mac; S.diag = ''; S.verified = false; S.streak = 0; S.mism = 0; render(); toast('Cube connecté'); return;
       }
     }
-    S.diag = "Le cube ne répond pas. Saisis son adresse MAC dans les réglages, puis reconnecte.";
+    S.diag = 'Le cube ne répond pas. Nom : ' + S.name + ' · signal : ' + (this.mfHex || 'non lu') + ' · adresses essayées : ' + (tried.join(', ') || 'aucune') +
+      '. Envoie ce message à Claude, ou saisis l\'adresse MAC dans les réglages puis reconnecte.';
     $('settings').open = true; render();
   },
-  async reconnect() { if (!this.device) return this.connect(); try { await this.setup(); } catch (e) { S.diag = 'Reconnexion impossible : ' + e.message; render(); } },
-  readAdvert() {
-    try {
-      if (!this.device.watchAdvertisements) return;
-      this.device.addEventListener('advertisementreceived', ev => {
-        const dv = ev.manufacturerData && ev.manufacturerData.get(0x0504);
-        if (dv && dv.byteLength >= 6) {
-          const b = Array.from(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)).slice(-6);
-          const h = a => a.map(x => x.toString(16).padStart(2, '0').toUpperCase()).join(':');
-          this.mfMac = [h(b.slice().reverse()), h(b)];
-        }
-      });
-      this.device.watchAdvertisements().catch(() => {});
-    } catch (e) {}
+  async openGatt() {
+    const server = await this.device.gatt.connect();
+    const svc = await server.getPrimaryService(this.SVC);
+    this.chr = await svc.getCharacteristic(this.CHR);
+    if (this.listening !== this.chr) { this.chr.addEventListener('characteristicvaluechanged', e => this.onNotify(e)); this.listening = this.chr; }
+    await this.chr.startNotifications();
   },
-  async macCandidates() {
+  async reconnect() {
+    if (!this.device) return this.connect();
+    try { if (!this.mfMacs.length) await this.readAdvert(); await this.setup(); }
+    catch (e) { S.diag = 'Reconnexion impossible : ' + e.message; render(); }
+  },
+  mfMacs: [], mfHex: '',
+  readAdvert() {
+    // csTimer's approach: watch the advertisement, read manufacturer data under QiYi's company id 0x0504
+    return new Promise(resolve => {
+      const dev = this.device;
+      if (!dev || !dev.watchAdvertisements) { resolve(); return; }
+      let done = false, ctrl = null;
+      const finish = () => { if (done) return; done = true; dev.removeEventListener('advertisementreceived', onAdv); try { ctrl && ctrl.abort(); } catch (e) {} try { dev.unwatchAdvertisements && dev.unwatchAdvertisements(); } catch (e) {} resolve(); };
+      const onAdv = ev => {
+        try {
+          const md = ev.manufacturerData; if (!md || !md.size) return;
+          let dv = md.get(0x0504), cic = 0x0504;
+          if (!dv) { for (const [k, v] of md) { dv = v; cic = k; break; } }
+          if (!dv) return;
+          const b = Array.from(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
+          const hx = a => a.map(x => x.toString(16).padStart(2, '0').toUpperCase());
+          this.mfHex = '0x' + cic.toString(16).padStart(4, '0') + ' ' + hx(b).join(' ');
+          if (b.length >= 6) {
+            const first = b.slice(0, 6), last = b.slice(-6);
+            this.mfMacs = [...new Set([hx(first.slice().reverse()).join(':'), hx(first).join(':'), hx(last.slice().reverse()).join(':'), hx(last).join(':')])];
+          }
+          finish();
+        } catch (e) {}
+      };
+      dev.addEventListener('advertisementreceived', onAdv);
+      try {
+        ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const p = ctrl ? dev.watchAdvertisements({ signal: ctrl.signal }) : dev.watchAdvertisements();
+        Promise.resolve(p).catch(() => finish());
+      } catch (e) { finish(); return; }
+      setTimeout(finish, 6000);
+    });
+  },
+  macCandidates() {
     const out = [];
-    const manual = store.get('rfb.manualMac', '');
     const saved = store.get('rfb.macs', {})[S.name];
-    if (saved) out.push(saved);
+    const manual = store.get('rfb.manualMac', '');
     if (manual) out.push(manual);
+    if (saved) out.push(saved);
+    // most likely first: MACs starting with CC:A3 read from the advertisement
+    out.push(...this.mfMacs.filter(m => m.startsWith('CC:A3')), ...this.mfMacs);
     const m = /([0-9A-F]{2})([0-9A-F]{2})$/i.exec(S.name);
     if (m) out.push(('CC:A3:00:00:' + m[1] + ':' + m[2]).toUpperCase());
-    await new Promise(r => setTimeout(r, this.device.watchAdvertisements ? 1500 : 0));
-    out.push(...this.mfMac);
     return [...new Set(out)].filter(x => /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(x));
   },
   tryHello(mac) {

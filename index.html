@@ -688,7 +688,7 @@ const BT = {
     else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
   },
   async request() {
-    this.log('version 4 · navigateur : ' + navigator.userAgent.slice(0, 80));
+    this.log('version 5 · navigateur : ' + navigator.userAgent.slice(0, 80));
     const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
     try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
     catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }
@@ -1073,6 +1073,20 @@ $('exportBtn').onclick = async () => {
 $('logCopy').onclick = async () => { const t = BT.logs.join('\n'); $('btLog').value = t; try { await navigator.clipboard.writeText(t); toast('Journal copié'); } catch (e) { $('btLog').focus(); $('btLog').select(); toast('Sélectionne le texte et copie-le'); } };
 $('clearBtn').onclick = () => confirmBox("Effacer tout l'historique des essais sur cet appareil ?", () => { App.history = []; store.set('rfb.history', []); renderHistory(); toast('Historique effacé'); });
 
+// Keep the screen on while the app is open (Screen Wake Lock); needs a tap on iOS
+const Wake = {
+  lock: null, failed: false,
+  async get() {
+    if (this.lock || this.failed || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    try { this.lock = await navigator.wakeLock.request('screen'); BT.log('écran maintenu allumé');
+      this.lock.addEventListener('release', () => { this.lock = null; }); }
+    catch (e) { BT.log('maintien de l\'écran refusé : ' + e.message); if (e.name === 'NotAllowedError') setTimeout(() => {}, 0); }
+  },
+};
+if (!('wakeLock' in navigator)) BT.log('maintien de l\'écran non disponible dans ce navigateur');
+document.addEventListener('click', () => Wake.get(), true);
+document.addEventListener('touchend', () => Wake.get(), true);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') Wake.get(); });
 render(); renderHistory();
 setTimeout(() => { FB.buildTables(); App.ready = true; render(); }, 60);
 </script>

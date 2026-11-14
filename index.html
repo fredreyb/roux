@@ -545,7 +545,13 @@ const Recon = (function () {
     fixText() { // compressed corrections
       const out = []; for (let k = this.fix.length - 1; k >= 0; k--) { const f = this.fix[k]; const l = out[out.length - 1];
         if (l && l.face === f.face) l.amt = norm(l.amt + f.d); else out.push({ face: f.face, amt: norm(f.d) }); }
-      return out.filter(o => o.amt).map(o => Cube.fmt(o.face, o.amt)).join(' ');
+      const o2 = out.filter(o => o.amt);
+      // R and L turned opposite ways = a slice: show it as M (M = R L' for the sensor)
+      if (o2.length === 2 && o2.every(o => o.face === 'R' || o.face === 'L') && o2[0].face !== o2[1].face) {
+        const r = o2.find(o => o.face === 'R'), l = o2.find(o => o.face === 'L');
+        if (norm(r.amt + l.amt) === 0) return Cube.fmt('M', r.amt);
+      }
+      return o2.map(o => Cube.fmt(o.face, o.amt)).join(' ');
     }
     push(face, d) { // returns 'ok' | 'fix' | 'fixed'
       if (this.fix.length) {
@@ -651,6 +657,8 @@ const Pair = (function () {
       let net = 0; alg.forEach(m => { if (m.type === 'M') net += m.amt; else if (m.type === 'r') net -= m.amt; });
       net = ((net % 4) + 4) % 4;
       if (net) alg = simplify(alg.concat([{ type: 'M', amt: 4 - net }]));
+      // avoid two x-axis moves in a row (e.g. M' R): easy to misread, and half of the M already gives the next state
+      if (tries < 60 && alg.some((m, i) => i && AX[m.type] === 'x' && AX[alg[i - 1].type] === 'x')) continue;
       const fin = Cube.applyAlg(state, alg);
       if (squareK(fin) !== 0 || !centresAligned(fin)) continue;
       const len = FB.solve(fin, 1).length;
@@ -745,6 +753,7 @@ function onCubeMove(msg) {
       if (chosen) BT.log('quart de tour non signalé par le cube, retrouvé par l\'état');
     }
   }
+  let resynced = false;
   const play = seq => seq.forEach(h => { const [f, d] = QIYI.CODES[h.code]; emitMove(QIYI.TO_USER[f], d, now - (ts - h.ts) * 1.6, h.ts * 1.6); });
   if (chosen) {
     S.streak++; S.mism = 0; if (S.streak >= 2) S.verified = true;
@@ -752,12 +761,12 @@ function onCubeMove(msg) {
   } else {
     play([cur]); markSeen([cur]);
     if (S.trustCube && repValid) {
-      if (S.verified) { S.model = reported; S.diag = 'Mouvement perdu récupéré (état resynchronisé).'; }
+      if (S.verified) { S.model = reported; resynced = true; S.diag = 'Mouvement perdu récupéré (état resynchronisé).'; }
       else if (++S.mism >= 3) { S.trustCube = false; S.diag = "L'état envoyé par le cube ne correspond pas : suivi par les mouvements seulement."; }
     }
   }
   S.lastTs = S.lastTs == null ? ts : Math.max(S.lastTs, ts);
-  App.afterModelChange();
+  App.afterModelChange(resynced);
   renderConn();
 }
 
@@ -788,7 +797,7 @@ const BT = {
     else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
   },
   async request() {
-    this.log('version 7 · navigateur : ' + navigator.userAgent.slice(0, 80));
+    this.log('version 8 · navigateur : ' + navigator.userAgent.slice(0, 80));
     const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
     try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
     catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }
@@ -964,12 +973,15 @@ const App = {
   },
   guidePhase() { return ['scrambling', 'rewinding', 'replay'].includes(this.phase) && this.guide; },
   // re-align the guide on the cube's real state, then finish the step if the sequence is complete
-  guideStep() {
+  // Normally only the previous or the current step is considered: half of a slice can put the cube in the state
+  // expected LATER (M' R = L), and jumping there would end the scramble while the other half is still coming.
+  // A jump further ahead is allowed only after a resync on the state sent by the cube (quarter turns lost).
+  guideStep(jump) {
     const g = this.guide;
     if (g.states) {
       let hit = -1;
-      // closest step at or after the current one (a sequence can pass twice through the same state)
-      for (let j = Math.max(0, g.i - 1); j < g.states.length; j++) if (Cube.equal(S.model, g.states[j])) { hit = j; break; }
+      const last = jump ? g.states.length - 1 : Math.min(g.i, g.states.length - 1);
+      for (let j = Math.max(0, g.i - 1); j <= last; j++) if (Cube.equal(S.model, g.states[j])) { hit = j; break; }
       const cur = g.tokens[g.i];
       if (hit >= 0 && (hit + 1 !== g.i || g.fix.length || (cur && cur.parts.some(p => p.done || p.prog)))) {
         g.tokens.forEach((t, k) => t.parts.forEach(p => { p.done = k <= hit; p.prog = 0; }));
@@ -977,24 +989,39 @@ const App = {
       }
     }
     if (!g.finished) return false;
+    this.guideEnd = this.lastGuideQ ? { t: this.lastGuideQ.t, tc: this.lastGuideQ.tc, phase: this.phase } : null;
     if (this.phase === 'scrambling') this.beginInspect();
     else if (this.phase === 'rewinding') this.afterRewind();
     else { this.phase = 'replayDone'; render(); }
     return true;
   },
-  afterModelChange() { if (this.guidePhase() && !this.guideStep()) render(); },
+  afterModelChange(jump) { if (this.guidePhase() && !this.guideStep(jump)) render(); },
   onMove(q) {
     if (this.startState) this.since.push(q);
     switch (this.phase) {
       case 'scrambling': case 'rewinding': case 'replay': {
+        this.lastGuideQ = q;
         this.guide.push(q.face, q.d);
         if (this.guideStep()) return;
         render(); break;
       }
-      case 'inspect':
+      case 'inspect': {
+        // a quarter turn less than 0.5 s after the end of the scramble is an over-turn (typically on an M2),
+        // not the start of the solve: ask to correct it instead of starting the timer
+        const e = this.guideEnd;
+        if (e && (e.phase === 'scrambling' || e.phase === 'rewinding')) {
+          const dt = q.tc != null && e.tc != null ? q.tc - e.tc : q.t - e.t;
+          if (dt < 500) {
+            this.phase = e.phase; this.lastGuideQ = q; this.guide.push(q.face, q.d);
+            if (!this.guideStep()) render();
+            return;
+          }
+        }
+        this.guideEnd = null;
         this.phase = 'solve'; this.t0 = q.t; this.inspection = q.t - this.inspT0; this.solveQ = [q];
         this.sub = this.sqAtStart ? { sqQ: -1, sqWhich: this.sqAtStart } : {};
         this.check(q); render(); tick(); break;
+      }
       case 'solve':
         this.solveQ.push(q); this.check(q); break;
       default: render();

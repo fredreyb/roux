@@ -989,7 +989,7 @@ const App = {
       }
     }
     if (!g.finished) return false;
-    this.guideEnd = this.lastGuideQ ? { t: this.lastGuideQ.t, tc: this.lastGuideQ.tc, phase: this.phase } : null;
+    this.guideEnd = this.lastGuideQ ? { tc: this.lastGuideQ.tc, real: performance.now(), phase: this.phase } : null;
     if (this.phase === 'scrambling') this.beginInspect();
     else if (this.phase === 'rewinding') this.afterRewind();
     else { this.phase = 'replayDone'; render(); }
@@ -1010,7 +1010,8 @@ const App = {
         // not the start of the solve: ask to correct it instead of starting the timer
         const e = this.guideEnd;
         if (e && (e.phase === 'scrambling' || e.phase === 'rewinding')) {
-          const dt = q.tc != null && e.tc != null ? q.tc - e.tc : q.t - e.t;
+          // cube clock when available (several turns can arrive in one notification), else real arrival time
+          const dt = q.tc != null && e.tc != null ? q.tc - e.tc : performance.now() - e.real;
           if (dt < 500) {
             this.phase = e.phase; this.lastGuideQ = q; this.guide.push(q.face, q.d);
             if (!this.guideStep()) render();

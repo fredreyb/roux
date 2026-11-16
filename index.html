@@ -670,14 +670,69 @@ const Pair = (function () {
   return { generate, squareK, centresAligned, simplify };
 })();
 
-const api = { AES, crc16modbus, QIYI, Cube, FB, Recon, Pair };
+// ------------------------------------------------------------------
+// Full solves: stage detection for CFOP (white cross on the white-centre face) and Roux (red block left).
+// level(method, state) = number of consecutive stages complete.
+// Roux blocks and corners are checked after turning M back so the centres line up (M never touches them);
+// the final stage is "every face uniform", which never uses that normalisation.
+// ------------------------------------------------------------------
+const Stages = (function () {
+  const S0 = Cube.solved(), SL = Cube.SLOTS;
+  const nz = p => p.filter(v => v).length;
+  const cub = {}; SL.forEach((s, i) => { const k = s.p.join(); (cub[k] = cub[k] || []).push(i); });
+  const pieces = Object.values(cub).filter(ix => nz(SL[ix[0]].p) >= 2).map(ix => ({ ix, cols: ix.map(i => S0[i]).sort().join('') }));
+  const centres = SL.map((s, i) => i).filter(i => nz(SL[i].p) === 1);
+  const byN = {}; SL.forEach((s, i) => { const k = s.n.join(); (byN[k] = byN[k] || []).push(i); });
+  const faces = Object.values(byN);
+  const uFace = faces.find(ix => ix.some(i => nz(SL[i].p) === 1 && S0[i] === 'Y'));
+  const ok = (st, pc) => pc.ix.every(i => st[i] === S0[i]);
+  const has = (pc, c) => pc.cols.includes(c);
+  const sel = f => pieces.filter(f);
+  const CROSS = sel(p => p.ix.length === 2 && has(p, 'W'));
+  const SLOTS = sel(p => p.ix.length === 3 && has(p, 'W')).map(c => [c, pieces.find(e => e.ix.length === 2 && e.cols === c.cols.replace('W', ''))]);
+  const FBP = sel(p => has(p, 'R') && !has(p, 'Y')), SBP = sel(p => has(p, 'O') && !has(p, 'Y'));
+  const UC = sel(p => p.ix.length === 3 && has(p, 'Y'));
+  const uniform = st => faces.every(ix => ix.every(i => st[i] === st[ix[0]]));
+  function normM(st) {
+    for (let k = 0; k < 4; k++) { const s2 = k ? Cube.applyAlg(st, [{ type: 'M', amt: k }]) : st; if (centres.every(i => s2[i] === S0[i])) return s2; }
+    return null;
+  }
+  function cfop(st) {
+    if (uniform(st)) return { cross: true, pairs: 4, oll: true, done: true };
+    const cross = CROSS.every(p => ok(st, p));
+    const pairs = cross ? SLOTS.filter(([c, e]) => ok(st, c) && ok(st, e)).length : 0;
+    return { cross, pairs, oll: pairs === 4 && uFace.every(i => st[i] === 'Y'), done: false };
+  }
+  function roux(st) {
+    if (uniform(st)) return { fb: true, sb: true, cmll: true, done: true };
+    const n = normM(st);
+    if (!n) return { fb: false, sb: false, cmll: false, done: false };
+    const fb = FBP.every(p => ok(n, p)), sb = fb && SBP.every(p => ok(n, p));
+    let cmll = false;
+    for (let u = 0; sb && u < 4 && !cmll; u++) { const s3 = u ? Cube.applyAlg(n, [{ type: 'U', amt: u }]) : n; cmll = UC.every(p => ok(s3, p)); }
+    return { fb, sb, cmll, done: false };
+  }
+  const DEF = {
+    cfop: [['cross', 'Croix'], ['p1', 'Paire 1'], ['p2', 'Paire 2'], ['p3', 'Paire 3'], ['p4', 'Paire 4'], ['oll', 'OLL'], ['pll', 'PLL']],
+    roux: [['fb', 'Premier bloc'], ['sb', 'Second bloc'], ['cmll', 'Coins (CMLL)'], ['lse', 'Arêtes (LSE)']],
+  };
+  function level(method, st) {
+    if (method === 'cfop') { const s = cfop(st); if (s.done) return 7; if (!s.cross) return 0; return s.pairs < 4 ? 1 + s.pairs : s.oll ? 6 : 5; }
+    const s = roux(st); return s.done ? 4 : s.cmll ? 3 : s.sb ? 2 : s.fb ? 1 : 0;
+  }
+  return { DEF, level, uniform, cfop, roux, normM };
+})();
+
+const api = { AES, crc16modbus, QIYI, Cube, FB, Recon, Pair, Stages };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.RouxCore = api;
 })(typeof self !== 'undefined' ? self : this);
 
 </script>
 <script>
 'use strict';
-const { Cube, FB, Recon, QIYI, Pair } = RouxCore;
+const { Cube, FB, Recon, QIYI, Pair, Stages } = RouxCore;
+const FULL = m => m === 'cfop' || m === 'roux';
+const MODE_NAME = { bloc: 'bloc complet', paire: 'seconde paire', cfop: 'résolution CFOP', roux: 'résolution Roux' };
 const $ = id => document.getElementById(id);
 const fmtS = ms => (ms / 1000).toFixed(2).replace('.', ',') + ' s';
 const fmtS1 = ms => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
@@ -797,7 +852,7 @@ const BT = {
     else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
   },
   async request() {
-    this.log('version 8 · navigateur : ' + navigator.userAgent.slice(0, 80));
+    this.log('version 9 · navigateur : ' + navigator.userAgent.slice(0, 80));
     const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
     try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
     catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }
@@ -915,7 +970,7 @@ const App = {
   inspT0: 0, t0: 0, solveQ: [], sub: {}, result: null, optimal: null, reveal: false,
   after: null, replaySol: null, ready: false, showNet: false,
   diff: store.get('rfb.diff', 'all'),
-  mode: store.get('rfb.mode', 'bloc'), // bloc | paire
+  mode: store.get('rfb.mode', 'bloc'), // bloc | paire | cfop | roux
   curMode: 'bloc',
   pauseThr: store.get('rfb.pauseThr', 1.0),
   history: store.get('rfb.history', []),
@@ -923,6 +978,12 @@ const App = {
   setMode(v) { this.mode = v; store.set('rfb.mode', v); render(); renderHistory(); },
   newScramble() {
     if (this.mode === 'paire') return this.newPairScramble();
+    if (FULL(this.mode)) {
+      const alg = Recon.randomScramble(20);
+      this.scramble = alg; this.guide = this.withStates(new Recon.Guide(alg)); this.phase = 'scrambling'; this.curMode = this.mode;
+      this.caseId = Date.now().toString(36); this.reveal = false; this.result = null;
+      render(); return;
+    }
     const [lo, hi] = DIFF[this.diff];
     let alg, st, len, tries = 0;
     do { alg = Recon.randomScramble(20); st = Cube.applyAlg(S.model, alg); len = FB.solve(st, 1).length; tries++; }
@@ -940,9 +1001,15 @@ const App = {
     this.caseId = Date.now().toString(36); this.reveal = false; this.result = null;
     render();
   },
-  freeScramble() { this.phase = 'free'; this.scramble = null; this.curMode = 'bloc'; this.caseId = Date.now().toString(36); this.result = null; render(); },
+  freeScramble() { this.phase = 'free'; this.scramble = null; this.curMode = FULL(this.mode) ? this.mode : 'bloc'; this.caseId = Date.now().toString(36); this.result = null; render(); },
   beginInspect(note) {
     this.startState = S.model.slice(); this.since = [];
+    if (FULL(this.curMode)) {
+      if (Stages.uniform(S.model)) { this.phase = 'idle'; toast('Le cube est déjà résolu : nouveau mélange'); render(); return; }
+      this.optimal = null; this.sqAtStart = null; this.lv0 = Stages.level(this.curMode, S.model);
+      this.phase = 'inspect'; this.inspT0 = performance.now(); this.reveal = false; this.note = note || '';
+      render(); tick(); return;
+    }
     if (FB.isSolved(S.model)) { this.phase = 'idle'; toast('Le bloc est déjà fait : nouveau mélange'); render(); return; }
     this.optimal = FB.solve(this.startState, 5);
     const loc = FB.locate(this.startState);
@@ -1020,7 +1087,7 @@ const App = {
         }
         this.guideEnd = null;
         this.phase = 'solve'; this.t0 = q.t; this.inspection = q.t - this.inspT0; this.solveQ = [q];
-        this.sub = this.sqAtStart ? { sqQ: -1, sqWhich: this.sqAtStart } : {};
+        this.sub = FULL(this.curMode) ? { reached: new Array(this.lv0).fill(-1) } : this.sqAtStart ? { sqQ: -1, sqWhich: this.sqAtStart } : {};
         this.check(q); render(); tick(); break;
       }
       case 'solve':
@@ -1029,6 +1096,14 @@ const App = {
     }
   },
   check(q) {
+    if (FULL(this.curMode)) {
+      const qi = this.solveQ.length - 1, lv = Stages.level(this.curMode, S.model), n = Stages.DEF[this.curMode].length;
+      const before = this.sub.reached.length;
+      while (this.sub.reached.length < lv) this.sub.reached.push(qi);
+      if (lv >= n) { this.finish(q); return; }
+      if (this.sub.reached.length > before) render();
+      return;
+    }
     const loc = FB.locate(S.model), qi = this.solveQ.length - 1;
     if (this.sub.sqQ == null) {
       if (FB.subsetSolved(loc, [1, 2, 4])) { this.sub.sqQ = qi; this.sub.sqWhich = 'arrière'; }
@@ -1046,6 +1121,20 @@ const App = {
     for (let i = 1; i < qs.length; i++) { const g = rel[i] - rel[i - 1]; if (g > thr) byTok[qTok[i]] = (byTok[qTok[i]] || 0) + g; }
     const pauses = Object.keys(byTok).map(Number).sort((a, b) => a - b).map(j => ({ before: j, label: tokens[j] ? tokens[j].label : '', dur: byTok[j] }));
     const pTot = pauses.reduce((a, p) => a + p.dur, 0);
+    // full solves: time, moves and pauses of each stage; "entry" = the pause right after the previous stage (recognition)
+    let stages = null;
+    if (FULL(this.curMode)) {
+      stages = []; let prevQ = -1, prevAt = 0;
+      Stages.DEF[this.curMode].forEach(([key, label], j) => {
+        const endQ = this.sub.reached[j] != null ? this.sub.reached[j] : qs.length - 1;
+        const at = endQ < 0 ? 0 : rel[endQ];
+        let pause = 0, entry = 0;
+        for (let i = Math.max(1, prevQ + 1); i <= endQ; i++) { const g = rel[i] - rel[i - 1]; if (g > thr) { pause += g; if (i === prevQ + 1 && prevQ >= 0) entry = g; } }
+        const moves = endQ < 0 ? 0 : qTok[endQ] - (prevQ < 0 ? -1 : qTok[prevQ]);
+        stages.push({ key, label, at: Math.round(at), ms: Math.round(at - prevAt), moves: Math.max(0, moves), pause: Math.round(pause), entry: Math.round(entry) });
+        if (endQ >= 0) { prevQ = endQ; prevAt = at; }
+      });
+    }
     const sqQ = this.sub.sqQ;
     const sqMs = sqQ == null ? null : sqQ < 0 ? 0 : rel[sqQ];
     const after = sqQ == null ? null : { ms: Math.round(time - sqMs), moves: sqQ < 0 ? tokens.length : Math.max(0, tokens.length - 1 - qTok[sqQ]) };
@@ -1058,7 +1147,7 @@ const App = {
       pauses: pauses.map(p => ({ before: p.before, label: p.label, ms: Math.round(p.dur) })), pauseTotal: Math.round(pTot),
       recon: tokens.map(t => t.label).join(' '),
       timeline: tokens.map(t => [t.label, Math.round(t.t)]),
-      sub: { square: sqMs != null ? Math.round(sqMs) : null, squareSide: this.sub.sqWhich || null, after },
+      sub: stages ? { stages } : { square: sqMs != null ? Math.round(sqMs) : null, squareSide: this.sub.sqWhich || null, after },
       optimal: this.optimal ? this.optimal.length : null, optimalSolutions: this.optimal ? this.optimal.solutions : [],
     };
     this.result = res; this.history.push(res);
@@ -1106,15 +1195,18 @@ function render() {
         ${connectBtn ? `<div class="row" style="margin-bottom:10px">${connectBtn}</div>` : ''}
         <label class="f">Exercice</label>
         <select id="modeSel" onchange="App.setMode(this.value)">
-          <option value="bloc">Premier bloc complet</option><option value="paire">Seconde paire (carré arrière déjà fait)</option></select>
+          <option value="bloc">Premier bloc complet</option><option value="paire">Seconde paire (carré arrière déjà fait)</option>
+          <option value="roux">Résolution complète · Roux</option><option value="cfop">Résolution complète · CFOP</option></select>
         ${App.mode === 'bloc' ? `<label class="f">Longueur du bloc optimal</label>
         <select id="diffSel" onchange="App.diff=this.value;store.set('rfb.diff',this.value)">
           <option value="all">Tous les mélanges</option><option value="short">Courts (4–5 coups)</option>
           <option value="mid">Moyens (6 coups)</option><option value="long7">7 coups</option><option value="long">Longs (8 coups et +)</option></select>` : ''}
         <div class="row" style="margin-top:12px"><button class="primary" onclick="App.newScramble()">Nouveau mélange</button></div>
-        ${App.mode === 'bloc' ? `<div class="row" style="margin-top:8px"><button class="small" onclick="App.freeScramble()">Je mélange moi-même</button></div>` : ''}
+        ${App.mode !== 'paire' ? `<div class="row" style="margin-top:8px"><button class="small" onclick="App.freeScramble()">Je mélange moi-même</button></div>` : ''}
         <p class="hint">${App.mode === 'paire'
           ? "Le mélange garde le carré arrière intact et ne déplace que la paire avant (coin blanc-rouge-vert, arête rouge-vert), avec R, U, F et M. Si ton bloc n'est pas fini, le mélange commence par le terminer."
+          : App.mode === 'cfop' ? "Mélange de 20 coups, puis résolution complète, croix blanche en bas. Le chrono s'arrête quand le cube est résolu et chaque étape est mesurée : croix, 4 paires, OLL, PLL."
+          : App.mode === 'roux' ? "Mélange de 20 coups, puis résolution complète (bloc rouge à gauche, bloc orange à droite). Le chrono s'arrête quand le cube est résolu et chaque étape est mesurée : blocs, coins, arêtes."
           : "Le mélange part de l'état actuel du cube : inutile de le résoudre entre deux essais."}</p></div>`;
       break;
     case 'scrambling': case 'rewinding': case 'replay': {
@@ -1131,13 +1223,19 @@ function render() {
         <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Annuler</button></div></div>`;
       break;
     case 'inspect':
-      h = `<div class="card"><h2>Inspection${App.curMode === 'paire' ? ' · seconde paire' : ''}${App.note ? ' · ' + esc(App.note) : ''}</h2>
-        <p>${App.curMode === 'paire' ? 'Le carré arrière est fait : repère la paire avant et planifie-la.' : 'Planifie ton carré, puis repère où sont les deux pièces de la seconde paire.'} Le chrono démarre à ton premier mouvement.</p>
+      h = `<div class="card"><h2>Inspection${App.curMode !== 'bloc' ? ' · ' + MODE_NAME[App.curMode] : ''}${App.note ? ' · ' + esc(App.note) : ''}</h2>
+        <p>${{ paire: 'Le carré arrière est fait : repère la paire avant et planifie-la.', bloc: "Planifie l'arête blanc-rouge, puis avance pièce par pièce.",
+          cfop: 'Planifie ta croix blanche (au moins une ou deux arêtes).', roux: "Planifie l'arête blanc-rouge et le début de ton premier bloc." }[App.curMode]} Le chrono démarre à ton premier mouvement.</p>
         <div class="big mute" id="clock">0,0 s</div>
         <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Annuler</button></div></div>`;
       break;
     case 'solve':
-      h = `<div class="card"><h2>Premier bloc</h2><div class="big" id="clock">0,0 s</div>
+      h = FULL(App.curMode) ? `<div class="card"><h2>${MODE_NAME[App.curMode][0].toUpperCase() + MODE_NAME[App.curMode].slice(1)}</h2><div class="big" id="clock">0,0 s</div>
+        <ul class="steps">${Stages.DEF[App.curMode].map(([k, l], j) => { const q = App.sub.reached[j];
+          return `<li><span>${l}</span><b>${q == null ? '' : '✓ ' + (q < 0 ? '0,0 s' : fmtS1(App.solveQ[q].t - App.t0))}</b></li>`; }).join('')}</ul>
+        <p class="hint">Le chrono s'arrête quand le cube est entièrement résolu.</p>
+        <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Abandonner</button></div></div>`
+      : `<div class="card"><h2>Premier bloc</h2><div class="big" id="clock">0,0 s</div>
         <p class="hint">Le chrono s'arrête dès que le bloc est complet.</p>
         <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Abandonner</button></div></div>`;
       break;
@@ -1160,7 +1258,39 @@ function afterSq(r) {
   if (!r.sub || r.sub.square == null) return null;
   return { ms: r.time - r.sub.square, moves: (r.timeline || []).filter(x => x[1] > r.sub.square).length };
 }
+function reconHTML(r) {
+  let recon = '';
+  const pauseAt = {}; r.pauses.forEach(p => pauseAt[p.before] = p.ms);
+  const FC = { U: 'Y', D: 'W', F: 'G', B: 'B', L: 'R', R: 'O' };
+  r.recon.split(' ').filter(Boolean).forEach((t, j) => { if (pauseAt[j]) recon += `<span class="p">${fmtS1(pauseAt[j])}</span>`;
+    const c = FC[t[0]]; recon += (c ? `<span class="tk" style="border-color:${COLOR[c]}">${esc(t)}</span>` : `<span class="tk">${esc(t)}</span>`) + ' '; });
+  return recon;
+}
+function fullResultHTML(r) {
+  const st = r.sub.stages, longest = r.pauses.slice().sort((a, b) => b.ms - a.ms)[0];
+  const worst = st.reduce((a, b) => (b.ms > a.ms ? b : a), st[0]);
+  const entries = st.reduce((a, x) => a + x.entry, 0);
+  const pct = x => r.time > 0 ? Math.round(100 * x / r.time) + ' %' : '–';
+  return `<div class="card"><h2>Résultat · ${MODE_NAME[modeOf(r)]}</h2>
+    <div class="big">${fmtS(r.time)}</div>
+    <div class="stats">
+      <div class="stat"><b>${r.moves}</b><span>coups</span></div>
+      <div class="stat"><b>${r.tps != null ? String(r.tps).replace('.', ',') : '–'}</b><span>coups / seconde</span></div>
+      <div class="stat"><b>${fmtS1(r.inspection)}</b><span>inspection</span></div>
+      <div class="stat"><b>${r.pauses.length ? fmtS1(r.pauseTotal) : '0'}</b><span>${r.pauses.length} pause${r.pauses.length > 1 ? 's' : ''} &gt; ${String(App.pauseThr).replace('.', ',')} s · ${pct(r.pauseTotal)}${longest ? ' · max ' + fmtS1(longest.ms) : ''}</span></div>
+    </div>
+    <h2 style="margin-top:14px">Étapes</h2>
+    <table><tr><th>Étape</th><th>Durée</th><th>Coups</th><th>Pause d'entrée</th><th>Pauses</th></tr>
+    ${st.map(x => `<tr${x === worst ? ' style="font-weight:700"' : ''}><td>${x.label}</td><td>${fmtS1(x.ms)}</td><td>${x.moves}</td><td>${x.entry ? fmtS1(x.entry) : '–'}</td><td>${x.pause ? fmtS1(x.pause) : '–'}</td></tr>`).join('')}</table>
+    <p class="hint">En gras : l'étape la plus longue. « Pause d'entrée » : l'arrêt juste après l'étape précédente, le temps de repérer la suite. Au total ${fmtS1(entries)} (${pct(entries)} du temps).</p>
+    <h2 style="margin-top:16px">Ta solution</h2>
+    <div class="recon">${reconHTML(r) || '<span class="mute">—</span>'}</div>
+    <p class="hint">Pauses en rouge, juste avant le mouvement qui a suivi. Chaque lettre désigne la face d'après la couleur de son centre : U jaune, D blanc, F vert, B bleu, L rouge, R orange. Après un M ou un r, une même face peut changer de lettre.${r.cancels ? ` ${r.cancels} quart${r.cancels > 1 ? 's' : ''} de tour annulé${r.cancels > 1 ? 's' : ''} (aller-retour).` : ''}</p>
+    </div>
+    <div class="row" style="margin-bottom:12px"><button onclick="App.rewind('retry')">Refaire ce cas</button><button class="primary" onclick="App.newScramble()">Nouveau mélange</button></div>`;
+}
 function resultHTML(r) {
+  if (FULL(modeOf(r)) && r.sub && r.sub.stages) return fullResultHTML(r);
   const diff = r.optimal != null ? r.moves - r.optimal : null;
   let recon = '';
   const pauseAt = {}; r.pauses.forEach(p => pauseAt[p.before] = p.ms);
@@ -1198,8 +1328,37 @@ function resultHTML(r) {
     <div class="row" style="margin-bottom:12px"><button onclick="App.rewind('retry')">Refaire ce cas</button><button class="primary" onclick="App.newScramble()">Nouveau mélange</button></div>`;
 }
 function avg(list, f) { const v = list.map(f).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
+function renderFullHistory(H) {
+  const f1 = x => x == null ? '–' : x.toFixed(1).replace('.', ',');
+  const pct = x => x == null ? '–' : Math.round(x) + ' %';
+  const block = n => { const l = H.slice(-n); return { n: l.length, t: avg(l, r => r.time), m: avg(l, r => r.moves), i: avg(l, r => r.inspection),
+    p: avg(l, r => r.time > 0 ? 100 * r.pauseTotal / r.time : null) }; };
+  const rows = [block(5), block(12), block(50)].filter((b, i, a) => i === 0 || b.n > a[i - 1].n);
+  const lbl = b => b.n === 1 ? 'Dernier' : b.n + ' derniers';
+  const L = H.slice(-12), tAvg = avg(L, r => r.time);
+  const st = Stages.DEF[App.mode].map(([k, label], j) => ({ label,
+    ms: avg(L, r => r.sub.stages[j] ? r.sub.stages[j].ms : null), mv: avg(L, r => r.sub.stages[j] ? r.sub.stages[j].moves : null),
+    en: avg(L, r => r.sub.stages[j] ? r.sub.stages[j].entry : null) }));
+  const worst = st.reduce((a, b) => ((b.ms || 0) > (a.ms || 0) ? b : a), st[0]);
+  $('history').innerHTML = `<div class="card"><h2>Progression · ${MODE_NAME[App.mode]}</h2>
+    <table><tr><th>Moyenne</th><th>Temps</th><th>Coups</th><th>En pause</th><th>Inspect.</th></tr>
+    ${rows.map(b => `<tr><td>${lbl(b)}</td><td>${fmtS1(b.t)}</td><td>${f1(b.m)}</td><td>${pct(b.p)}</td><td>${b.i == null ? '–' : fmtS1(b.i)}</td></tr>`).join('')}</table>
+    <h2 style="margin-top:16px">Par étape · ${L.length === 1 ? 'dernier essai' : L.length + ' derniers'}</h2>
+    <table><tr><th>Étape</th><th>Durée</th><th>Part</th><th>Coups</th><th>Pause d'entrée</th></tr>
+    ${st.map(x => `<tr${x === worst ? ' style="font-weight:700"' : ''}><td>${x.label}</td><td>${x.ms == null ? '–' : fmtS1(x.ms)}</td><td>${x.ms == null || !tAvg ? '–' : pct(100 * x.ms / tAvg)}</td><td>${f1(x.mv)}</td><td>${x.en == null ? '–' : fmtS1(x.en)}</td></tr>`).join('')}</table>
+    <p class="hint">En gras : l'étape qui coûte le plus. C'est elle qu'on travaille en priorité.</p>
+    <h2 style="margin-top:16px">Derniers essais</h2>
+    <table><tr><th>Quand</th><th>Temps</th><th>Coups</th><th>Pauses</th></tr>
+    ${H.slice(-10).reverse().map(r => `<tr><td>${new Date(r.date).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td><td>${fmtS(r.time)}</td><td>${r.moves}</td><td>${r.pauses.length}</td></tr>`).join('')}</table>
+    <p class="hint">${H.length} essai${H.length > 1 ? 's' : ''} enregistré${H.length > 1 ? 's' : ''} sur cet appareil.</p></div>`;
+}
 function renderHistory() {
   const pair = App.mode === 'paire';
+  if (FULL(App.mode)) {
+    const HF = App.history.filter(r => modeOf(r) === App.mode && r.sub && r.sub.stages);
+    if (!HF.length) { $('history').innerHTML = App.history.length ? `<div class="card"><h2>Progression · ${MODE_NAME[App.mode]}</h2><p class="mute">Aucun essai dans ce mode pour l'instant.</p></div>` : ''; return; }
+    return renderFullHistory(HF);
+  }
   const H = App.history.filter(r => modeOf(r) === App.mode);
   if (!H.length) { $('history').innerHTML = App.history.length ? `<div class="card"><h2>Progression · ${pair ? 'seconde paire' : 'bloc complet'}</h2><p class="mute">Aucun essai dans ce mode pour l'instant.</p></div>` : ''; return; }
   const block = n => { const l = H.slice(-n); return { n: l.length, t: avg(l, r => r.time), m: avg(l, r => r.moves), d: avg(l, r => r.optimal != null ? r.moves - r.optimal : null), i: avg(l, r => r.inspection),
@@ -1260,8 +1419,8 @@ $('simGo').onclick = () => {
   $('simInput').value = ''; render();
 };
 $('exportBtn').onclick = async () => {
-  const data = JSON.stringify({ app: 'Roux premier bloc', version: 2,
-    convention: "blanc en bas, vert devant, bloc rouge à gauche ; notation dans ce repère ; start = 54 couleurs ; mode = bloc ou paire (carré arrière déjà fait) ; temps en ms depuis le 1er mouvement (horloge du cube) ; sub.after = temps et coups après le 1er carré ; pauses mesurées entre quarts de tour",
+  const data = JSON.stringify({ app: 'Roux premier bloc', version: 3,
+    convention: "blanc en bas, vert devant, bloc rouge à gauche ; notation dans ce repère ; start = 54 couleurs ; mode = bloc, paire (carré arrière déjà fait), cfop ou roux (résolution complète) ; sub.stages = étapes d'une résolution complète (ms = durée, at = fin, moves, pause, entry = pause juste après l'étape précédente) ; temps en ms depuis le 1er mouvement (horloge du cube) ; sub.after = temps et coups après le 1er carré ; pauses mesurées entre quarts de tour",
     attempts: App.history.slice(-50) });
   const box = $('exportBox'); box.style.display = 'block'; box.value = data;
   try { await navigator.clipboard.writeText(data); toast('Copié : colle-le dans ta conversation avec Claude'); }

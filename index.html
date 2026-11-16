@@ -729,6 +729,7 @@ const Stages = (function () {
     cfop: [['cross', 'Croix'], ['p1', 'Paire 1'], ['p2', 'Paire 2'], ['p3', 'Paire 3'], ['p4', 'Paire 4'], ['oll', 'OLL'], ['pll', 'PLL']],
     roux: [['fb', 'Premier bloc'], ['sb', 'Second bloc'], ['cmll', 'Coins (CMLL)'], ['lse', 'Arêtes (LSE)']],
     sb: [['dr', 'Arête blanc-orange'], ['p1', '1re paire'], ['p2', '2e paire']],
+    blocs2: [['fb', 'Premier bloc'], ['dr', 'Arête blanc-orange'], ['p1', '1re paire (2e bloc)'], ['p2', '2e paire (2e bloc)']],
   };
   const DR = SBP.find(p => p.cols === 'OW');
   const SBPAIRS = SBP.filter(p => p.ix.length === 3).map(c => [c, SBP.find(e => e.ix.length === 2 && e.cols === c.cols.replace('W', ''))]);
@@ -739,6 +740,7 @@ const Stages = (function () {
   }
   function level(method, st) {
     if (method === 'sb') return sbLevel(st);
+    if (method === 'blocs2') return fbRot(st) ? 1 + sbLevel(st) : 0;
     if (method === 'cfop') { const s = cfop(st); if (s.done) return 7; if (!s.cross) return 0; return s.pairs < 4 ? 1 + s.pairs : s.oll ? 6 : 5; }
     const s = roux(st); return s.done ? 4 : s.cmll ? 3 : s.sb ? 2 : s.fb ? 1 : 0;
   }
@@ -786,8 +788,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = api; else 
 'use strict';
 const { Cube, FB, Recon, QIYI, Pair, Stages, SBGen } = RouxCore;
 // staged exercises: timed stage by stage (full solves, and the second-block drill)
-const FULL = m => m === 'cfop' || m === 'roux' || m === 'sb';
-const MODE_NAME = { bloc: 'bloc complet', paire: 'seconde paire', sb: 'second bloc', cfop: 'résolution CFOP', roux: 'résolution Roux' };
+const FULL = m => m === 'cfop' || m === 'roux' || m === 'sb' || m === 'blocs2';
+const MODE_NAME = { bloc: 'bloc complet', paire: 'seconde paire', sb: 'second bloc', blocs2: 'deux blocs', cfop: 'résolution CFOP', roux: 'résolution Roux' };
 const $ = id => document.getElementById(id);
 const fmtS = ms => (ms / 1000).toFixed(2).replace('.', ',') + ' s';
 const fmtS1 = ms => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
@@ -907,7 +909,7 @@ const BT = {
     else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
   },
   async request() {
-    this.log('version 11 · navigateur : ' + navigator.userAgent.slice(0, 80));
+    this.log('version 12 · navigateur : ' + navigator.userAgent.slice(0, 80));
     const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
     try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
     catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }
@@ -1069,8 +1071,9 @@ const App = {
   beginInspect(note) {
     this.startState = S.model.slice(); this.since = [];
     if (FULL(this.curMode)) {
-      const doneAlready = this.curMode === 'sb' ? Stages.level('sb', S.model) >= 3 : Stages.uniform(S.model);
-      if (doneAlready) { this.phase = 'idle'; toast(this.curMode === 'sb' ? 'Le second bloc est déjà fait : nouveau mélange' : 'Le cube est déjà résolu : nouveau mélange'); render(); return; }
+      const nSt = Stages.DEF[this.curMode].length;
+      const doneAlready = this.curMode === 'sb' || this.curMode === 'blocs2' ? Stages.level(this.curMode, S.model) >= nSt : Stages.uniform(S.model);
+      if (doneAlready) { this.phase = 'idle'; toast({ sb: 'Le second bloc est déjà fait', blocs2: 'Les deux blocs sont déjà faits' }[this.curMode] || 'Le cube est déjà résolu'); render(); return; }
       this.optimal = null; this.sqAtStart = null; this.lv0 = Stages.level(this.curMode, S.model);
       this.phase = 'inspect'; this.inspT0 = performance.now(); this.reveal = false; this.note = note || '';
       render(); tick(); return;
@@ -1262,6 +1265,7 @@ function render() {
         <select id="modeSel" onchange="App.setMode(this.value)">
           <option value="bloc">Premier bloc complet</option><option value="paire">Seconde paire (carré arrière déjà fait)</option>
           <option value="sb">Second bloc (premier bloc déjà fait)</option>
+          <option value="blocs2">Deux blocs (premier + second)</option>
           <option value="roux">Résolution complète · Roux</option><option value="cfop">Résolution complète · CFOP</option></select>
         ${App.mode === 'bloc' ? `<label class="f">Longueur du bloc optimal</label>
         <select id="diffSel" onchange="App.diff=this.value;store.set('rfb.diff',this.value)">
@@ -1271,6 +1275,7 @@ function render() {
         ${App.mode !== 'paire' && App.mode !== 'sb' ? `<div class="row" style="margin-top:8px"><button class="small" onclick="App.freeScramble()">Je mélange moi-même</button></div>` : ''}
         <p class="hint">${App.mode === 'paire'
           ? "Le mélange garde le carré arrière intact et ne déplace que la paire avant (coin blanc-rouge-vert, arête rouge-vert), avec R, U, F et M. Si ton bloc n'est pas fini, le mélange commence par le terminer."
+          : App.mode === 'blocs2' ? "Mélange de 20 coups, puis construction des deux blocs. Le chrono s'arrête quand les deux blocs sont faits (la tranche du milieu et la couche du haut peuvent rester mélangées). Étapes mesurées : premier bloc, puis arête blanc-orange et les deux paires du second bloc."
           : App.mode === 'sb' ? "Le mélange garde le premier bloc et ne mélange que le reste, avec R, U et M. Si ton premier bloc n'est pas fini, le mélange commence par le terminer. Étapes mesurées : arête blanc-orange, puis les deux paires."
           : App.mode === 'cfop' ? "Mélange de 20 coups, puis résolution complète, croix blanche en bas. Le chrono s'arrête quand le cube est résolu et chaque étape est mesurée : croix, 4 paires, OLL, PLL."
           : App.mode === 'roux' ? "Mélange de 20 coups, puis résolution complète (bloc rouge à gauche, bloc orange à droite). Le chrono s'arrête quand le cube est résolu et chaque étape est mesurée : blocs, coins, arêtes."
@@ -1293,6 +1298,7 @@ function render() {
       h = `<div class="card"><h2>Inspection${App.curMode !== 'bloc' ? ' · ' + MODE_NAME[App.curMode] : ''}${App.note ? ' · ' + esc(App.note) : ''}</h2>
         <p>${{ paire: 'Le carré arrière est fait : repère la paire avant et planifie-la.', bloc: "Planifie l'arête blanc-rouge, puis avance pièce par pièce.",
           sb: "Repère l'arête blanc-orange et planifie comment l'amener en bas à droite.",
+          blocs2: "Planifie l'arête blanc-rouge et le début de ton premier bloc.",
           cfop: 'Planifie ta croix blanche (au moins une ou deux arêtes).', roux: "Planifie l'arête blanc-rouge et le début de ton premier bloc." }[App.curMode]} Le chrono démarre à ton premier mouvement.</p>
         <div class="big mute" id="clock">0,0 s</div>
         <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Annuler</button></div></div>`;
@@ -1301,7 +1307,7 @@ function render() {
       h = FULL(App.curMode) ? `<div class="card"><h2>${MODE_NAME[App.curMode][0].toUpperCase() + MODE_NAME[App.curMode].slice(1)}</h2><div class="big" id="clock">0,0 s</div>
         <ul class="steps">${Stages.DEF[App.curMode].map(([k, l], j) => { const q = App.sub.reached[j];
           return `<li><span>${l}</span><b>${q == null ? '' : '✓ ' + (q < 0 ? '0,0 s' : fmtS1(App.solveQ[q].t - App.t0))}</b></li>`; }).join('')}</ul>
-        <p class="hint">${App.curMode === 'sb' ? "Le chrono s'arrête quand le second bloc est fait." : "Le chrono s'arrête quand le cube est entièrement résolu."}</p>
+        <p class="hint">${{ sb: "Le chrono s'arrête quand le second bloc est fait.", blocs2: "Le chrono s'arrête quand les deux blocs sont faits." }[App.curMode] || "Le chrono s'arrête quand le cube est entièrement résolu."}</p>
         <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Abandonner</button></div></div>`
       : `<div class="card"><h2>Premier bloc</h2><div class="big" id="clock">0,0 s</div>
         <p class="hint">Le chrono s'arrête dès que le bloc est complet.</p>
@@ -1488,7 +1494,7 @@ $('simGo').onclick = () => {
 };
 $('exportBtn').onclick = async () => {
   const data = JSON.stringify({ app: 'Roux premier bloc', version: 3,
-    convention: "blanc en bas, vert devant, bloc rouge à gauche ; notation dans ce repère ; start = 54 couleurs ; mode = bloc, paire (carré arrière déjà fait), sb (second bloc, premier bloc déjà fait), cfop ou roux (résolution complète) ; sub.stages = étapes d'une résolution complète (ms = durée, at = fin, moves, pause, entry = pause juste après l'étape précédente) ; temps en ms depuis le 1er mouvement (horloge du cube) ; sub.after = temps et coups après le 1er carré ; pauses mesurées entre quarts de tour",
+    convention: "blanc en bas, vert devant, bloc rouge à gauche ; notation dans ce repère ; start = 54 couleurs ; mode = bloc, paire (carré arrière déjà fait), sb (second bloc, premier bloc déjà fait), blocs2 (les deux blocs depuis un mélange complet), cfop ou roux (résolution complète) ; sub.stages = étapes d'une résolution complète (ms = durée, at = fin, moves, pause, entry = pause juste après l'étape précédente) ; temps en ms depuis le 1er mouvement (horloge du cube) ; sub.after = temps et coups après le 1er carré ; pauses mesurées entre quarts de tour",
     attempts: App.history.slice(-50) });
   const box = $('exportBox'); box.style.display = 'block'; box.value = data;
   try { await navigator.clipboard.writeText(data); toast('Copié : colle-le dans ta conversation avec Claude'); }

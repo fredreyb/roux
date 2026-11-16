@@ -703,11 +703,24 @@ const Stages = (function () {
     const pairs = cross ? SLOTS.filter(([c, e]) => ok(st, c) && ok(st, e)).length : 0;
     return { cross, pairs, oll: pairs === 4 && uFace.every(i => st[i] === 'Y'), done: false };
   }
+  // The connected cube reports moves relative to its centres: an M shows up as R and L' turned together,
+  // so the slice offset appears as both outer layers turned. Undo it by turning R and L' together
+  // (k = 0..3) until the first block is home; the second block and the corners are checked in that same frame.
+  // (normM covers states built with real slice moves, as in the tests.)
+  function fbRot(st) {
+    const base = normM(st) || st;
+    for (let k = 0; k < 4; k++) {
+      const s = k ? Cube.apply(Cube.apply(base, 'R', k), 'L', 4 - k) : base;
+      if (FBP.every(p => ok(s, p))) return s;
+    }
+    return null;
+  }
+  const fbHome = st => FBP.every(p => ok(st, p));
   function roux(st) {
     if (uniform(st)) return { fb: true, sb: true, cmll: true, done: true };
-    const n = normM(st);
+    const n = fbRot(st);
     if (!n) return { fb: false, sb: false, cmll: false, done: false };
-    const fb = FBP.every(p => ok(n, p)), sb = fb && SBP.every(p => ok(n, p));
+    const fb = true, sb = SBP.every(p => ok(n, p));
     let cmll = false;
     for (let u = 0; sb && u < 4 && !cmll; u++) { const s3 = u ? Cube.applyAlg(n, [{ type: 'U', amt: u }]) : n; cmll = UC.every(p => ok(s3, p)); }
     return { fb, sb, cmll, done: false };
@@ -720,7 +733,7 @@ const Stages = (function () {
   const DR = SBP.find(p => p.cols === 'OW');
   const SBPAIRS = SBP.filter(p => p.ix.length === 3).map(c => [c, SBP.find(e => e.ix.length === 2 && e.cols === c.cols.replace('W', ''))]);
   function sbLevel(st) {
-    const n = normM(st); if (!n || !FBP.every(p => ok(n, p))) return 0;
+    const n = fbRot(st); if (!n) return 0;
     if (!ok(n, DR)) return 0;
     return 1 + SBPAIRS.filter(([c, e]) => ok(n, c) && ok(n, e)).length;
   }
@@ -729,7 +742,7 @@ const Stages = (function () {
     if (method === 'cfop') { const s = cfop(st); if (s.done) return 7; if (!s.cross) return 0; return s.pairs < 4 ? 1 + s.pairs : s.oll ? 6 : 5; }
     const s = roux(st); return s.done ? 4 : s.cmll ? 3 : s.sb ? 2 : s.fb ? 1 : 0;
   }
-  return { DEF, level, uniform, cfop, roux, normM };
+  return { DEF, level, uniform, cfop, roux, normM, fbRot, fbHome };
 })();
 
 // Second-block drill: first block kept (finished first if needed), the rest scrambled with R, U, M only.
@@ -742,7 +755,7 @@ const SBGen = (function () {
     if (!FB.isSolved(st)) { const sol = FB.solve(st, 1).solutions[0]; if (sol == null) return null; pre = Cube.parseAlg(sol); st = Cube.applyAlg(st, pre); }
     // the block may be solved one L-turn away from home: bring it home, otherwise U moves would break it
     let home = -1;
-    for (let j = 0; j < 4 && home < 0; j++) if (Stages.roux(j ? Cube.applyAlg(st, [{ type: 'L', amt: j }]) : st).fb) home = j;
+    for (let j = 0; j < 4 && home < 0; j++) if (Stages.fbHome(j ? Cube.applyAlg(st, [{ type: 'L', amt: j }]) : st)) home = j;
     if (home < 0) return null;
     if (home) { pre = pre.concat([{ type: 'L', amt: home }]); st = Cube.applyAlg(st, [{ type: 'L', amt: home }]); }
     for (let tries = 0; tries < 100; tries++) {
@@ -894,7 +907,7 @@ const BT = {
     else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
   },
   async request() {
-    this.log('version 10 · navigateur : ' + navigator.userAgent.slice(0, 80));
+    this.log('version 11 · navigateur : ' + navigator.userAgent.slice(0, 80));
     const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
     try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
     catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }

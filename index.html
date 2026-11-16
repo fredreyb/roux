@@ -715,24 +715,66 @@ const Stages = (function () {
   const DEF = {
     cfop: [['cross', 'Croix'], ['p1', 'Paire 1'], ['p2', 'Paire 2'], ['p3', 'Paire 3'], ['p4', 'Paire 4'], ['oll', 'OLL'], ['pll', 'PLL']],
     roux: [['fb', 'Premier bloc'], ['sb', 'Second bloc'], ['cmll', 'Coins (CMLL)'], ['lse', 'Arêtes (LSE)']],
+    sb: [['dr', 'Arête blanc-orange'], ['p1', '1re paire'], ['p2', '2e paire']],
   };
+  const DR = SBP.find(p => p.cols === 'OW');
+  const SBPAIRS = SBP.filter(p => p.ix.length === 3).map(c => [c, SBP.find(e => e.ix.length === 2 && e.cols === c.cols.replace('W', ''))]);
+  function sbLevel(st) {
+    const n = normM(st); if (!n || !FBP.every(p => ok(n, p))) return 0;
+    if (!ok(n, DR)) return 0;
+    return 1 + SBPAIRS.filter(([c, e]) => ok(n, c) && ok(n, e)).length;
+  }
   function level(method, st) {
+    if (method === 'sb') return sbLevel(st);
     if (method === 'cfop') { const s = cfop(st); if (s.done) return 7; if (!s.cross) return 0; return s.pairs < 4 ? 1 + s.pairs : s.oll ? 6 : 5; }
     const s = roux(st); return s.done ? 4 : s.cmll ? 3 : s.sb ? 2 : s.fb ? 1 : 0;
   }
   return { DEF, level, uniform, cfop, roux, normM };
 })();
 
-const api = { AES, crc16modbus, QIYI, Cube, FB, Recon, Pair, Stages };
+// Second-block drill: first block kept (finished first if needed), the rest scrambled with R, U, M only.
+const SBGen = (function () {
+  const AX = { L: 'x', M: 'x', R: 'x', r: 'x', U: 'y', D: 'y', F: 'z', B: 'z' };
+  const TAIL = ['R', 'U', 'M'];
+  function generate(state, opts = {}) {
+    const rnd = opts.rnd || Math.random, n = opts.n || 12;
+    let pre = [], st = state;
+    if (!FB.isSolved(st)) { const sol = FB.solve(st, 1).solutions[0]; if (sol == null) return null; pre = Cube.parseAlg(sol); st = Cube.applyAlg(st, pre); }
+    // the block may be solved one L-turn away from home: bring it home, otherwise U moves would break it
+    let home = -1;
+    for (let j = 0; j < 4 && home < 0; j++) if (Stages.roux(j ? Cube.applyAlg(st, [{ type: 'L', amt: j }]) : st).fb) home = j;
+    if (home < 0) return null;
+    if (home) { pre = pre.concat([{ type: 'L', amt: home }]); st = Cube.applyAlg(st, [{ type: 'L', amt: home }]); }
+    for (let tries = 0; tries < 100; tries++) {
+      const tail = [];
+      while (tail.length < n) { const t = TAIL[Math.floor(rnd() * TAIL.length)];
+        if (tail.length && AX[tail[tail.length - 1].type] === AX[t]) continue;
+        tail.push({ type: t, amt: 1 + Math.floor(rnd() * 3) }); }
+      let alg = Pair.simplify(pre.concat(tail));
+      let net = 0; alg.forEach(m => { if (m.type === 'M') net += m.amt; else if (m.type === 'r') net -= m.amt; });
+      net = ((net % 4) + 4) % 4;
+      if (net) alg = Pair.simplify(alg.concat([{ type: 'M', amt: 4 - net }]));
+      if (tries < 80 && alg.some((m, i) => i && AX[m.type] === 'x' && AX[alg[i - 1].type] === 'x')) continue;
+      const fin = Cube.applyAlg(state, alg);
+      if (!FB.isSolved(fin) || !Pair.centresAligned(fin) || Stages.level('sb', fin) >= 2) continue;
+      return { alg, final: fin };
+    }
+    return null;
+  }
+  return { generate };
+})();
+
+const api = { AES, crc16modbus, QIYI, Cube, FB, Recon, Pair, Stages, SBGen };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.RouxCore = api;
 })(typeof self !== 'undefined' ? self : this);
 
 </script>
 <script>
 'use strict';
-const { Cube, FB, Recon, QIYI, Pair, Stages } = RouxCore;
-const FULL = m => m === 'cfop' || m === 'roux';
-const MODE_NAME = { bloc: 'bloc complet', paire: 'seconde paire', cfop: 'résolution CFOP', roux: 'résolution Roux' };
+const { Cube, FB, Recon, QIYI, Pair, Stages, SBGen } = RouxCore;
+// staged exercises: timed stage by stage (full solves, and the second-block drill)
+const FULL = m => m === 'cfop' || m === 'roux' || m === 'sb';
+const MODE_NAME = { bloc: 'bloc complet', paire: 'seconde paire', sb: 'second bloc', cfop: 'résolution CFOP', roux: 'résolution Roux' };
 const $ = id => document.getElementById(id);
 const fmtS = ms => (ms / 1000).toFixed(2).replace('.', ',') + ' s';
 const fmtS1 = ms => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
@@ -852,7 +894,7 @@ const BT = {
     else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
   },
   async request() {
-    this.log('version 9 · navigateur : ' + navigator.userAgent.slice(0, 80));
+    this.log('version 10 · navigateur : ' + navigator.userAgent.slice(0, 80));
     const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
     try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
     catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }
@@ -979,7 +1021,16 @@ const App = {
   newScramble() {
     if (this.mode === 'paire') return this.newPairScramble();
     if (FULL(this.mode)) {
-      const alg = Recon.randomScramble(20);
+      let alg;
+      if (this.mode === 'sb') {
+        const g = SBGen.generate(S.model);
+        if (!g) { toast("Impossible de préparer ce mélange : touche « Mon cube est résolu » si l'état affiché est faux"); return; }
+        alg = g.alg;
+        this.scramble = alg; this.guide = this.withStates(new Recon.Guide(Recon.physToGuide(alg.map(m => Cube.fmt(m.type, m.amt)).join(' '))));
+        this.phase = 'scrambling'; this.curMode = 'sb'; this.caseId = Date.now().toString(36); this.reveal = false; this.result = null;
+        render(); return;
+      }
+      alg = Recon.randomScramble(20);
       this.scramble = alg; this.guide = this.withStates(new Recon.Guide(alg)); this.phase = 'scrambling'; this.curMode = this.mode;
       this.caseId = Date.now().toString(36); this.reveal = false; this.result = null;
       render(); return;
@@ -1005,7 +1056,8 @@ const App = {
   beginInspect(note) {
     this.startState = S.model.slice(); this.since = [];
     if (FULL(this.curMode)) {
-      if (Stages.uniform(S.model)) { this.phase = 'idle'; toast('Le cube est déjà résolu : nouveau mélange'); render(); return; }
+      const doneAlready = this.curMode === 'sb' ? Stages.level('sb', S.model) >= 3 : Stages.uniform(S.model);
+      if (doneAlready) { this.phase = 'idle'; toast(this.curMode === 'sb' ? 'Le second bloc est déjà fait : nouveau mélange' : 'Le cube est déjà résolu : nouveau mélange'); render(); return; }
       this.optimal = null; this.sqAtStart = null; this.lv0 = Stages.level(this.curMode, S.model);
       this.phase = 'inspect'; this.inspT0 = performance.now(); this.reveal = false; this.note = note || '';
       render(); tick(); return;
@@ -1196,15 +1248,17 @@ function render() {
         <label class="f">Exercice</label>
         <select id="modeSel" onchange="App.setMode(this.value)">
           <option value="bloc">Premier bloc complet</option><option value="paire">Seconde paire (carré arrière déjà fait)</option>
+          <option value="sb">Second bloc (premier bloc déjà fait)</option>
           <option value="roux">Résolution complète · Roux</option><option value="cfop">Résolution complète · CFOP</option></select>
         ${App.mode === 'bloc' ? `<label class="f">Longueur du bloc optimal</label>
         <select id="diffSel" onchange="App.diff=this.value;store.set('rfb.diff',this.value)">
           <option value="all">Tous les mélanges</option><option value="short">Courts (4–5 coups)</option>
           <option value="mid">Moyens (6 coups)</option><option value="long7">7 coups</option><option value="long">Longs (8 coups et +)</option></select>` : ''}
         <div class="row" style="margin-top:12px"><button class="primary" onclick="App.newScramble()">Nouveau mélange</button></div>
-        ${App.mode !== 'paire' ? `<div class="row" style="margin-top:8px"><button class="small" onclick="App.freeScramble()">Je mélange moi-même</button></div>` : ''}
+        ${App.mode !== 'paire' && App.mode !== 'sb' ? `<div class="row" style="margin-top:8px"><button class="small" onclick="App.freeScramble()">Je mélange moi-même</button></div>` : ''}
         <p class="hint">${App.mode === 'paire'
           ? "Le mélange garde le carré arrière intact et ne déplace que la paire avant (coin blanc-rouge-vert, arête rouge-vert), avec R, U, F et M. Si ton bloc n'est pas fini, le mélange commence par le terminer."
+          : App.mode === 'sb' ? "Le mélange garde le premier bloc et ne mélange que le reste, avec R, U et M. Si ton premier bloc n'est pas fini, le mélange commence par le terminer. Étapes mesurées : arête blanc-orange, puis les deux paires."
           : App.mode === 'cfop' ? "Mélange de 20 coups, puis résolution complète, croix blanche en bas. Le chrono s'arrête quand le cube est résolu et chaque étape est mesurée : croix, 4 paires, OLL, PLL."
           : App.mode === 'roux' ? "Mélange de 20 coups, puis résolution complète (bloc rouge à gauche, bloc orange à droite). Le chrono s'arrête quand le cube est résolu et chaque étape est mesurée : blocs, coins, arêtes."
           : "Le mélange part de l'état actuel du cube : inutile de le résoudre entre deux essais."}</p></div>`;
@@ -1225,6 +1279,7 @@ function render() {
     case 'inspect':
       h = `<div class="card"><h2>Inspection${App.curMode !== 'bloc' ? ' · ' + MODE_NAME[App.curMode] : ''}${App.note ? ' · ' + esc(App.note) : ''}</h2>
         <p>${{ paire: 'Le carré arrière est fait : repère la paire avant et planifie-la.', bloc: "Planifie l'arête blanc-rouge, puis avance pièce par pièce.",
+          sb: "Repère l'arête blanc-orange et planifie comment l'amener en bas à droite.",
           cfop: 'Planifie ta croix blanche (au moins une ou deux arêtes).', roux: "Planifie l'arête blanc-rouge et le début de ton premier bloc." }[App.curMode]} Le chrono démarre à ton premier mouvement.</p>
         <div class="big mute" id="clock">0,0 s</div>
         <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Annuler</button></div></div>`;
@@ -1233,7 +1288,7 @@ function render() {
       h = FULL(App.curMode) ? `<div class="card"><h2>${MODE_NAME[App.curMode][0].toUpperCase() + MODE_NAME[App.curMode].slice(1)}</h2><div class="big" id="clock">0,0 s</div>
         <ul class="steps">${Stages.DEF[App.curMode].map(([k, l], j) => { const q = App.sub.reached[j];
           return `<li><span>${l}</span><b>${q == null ? '' : '✓ ' + (q < 0 ? '0,0 s' : fmtS1(App.solveQ[q].t - App.t0))}</b></li>`; }).join('')}</ul>
-        <p class="hint">Le chrono s'arrête quand le cube est entièrement résolu.</p>
+        <p class="hint">${App.curMode === 'sb' ? "Le chrono s'arrête quand le second bloc est fait." : "Le chrono s'arrête quand le cube est entièrement résolu."}</p>
         <div class="row" style="margin-top:8px"><button class="small" onclick="App.abort()">Abandonner</button></div></div>`
       : `<div class="card"><h2>Premier bloc</h2><div class="big" id="clock">0,0 s</div>
         <p class="hint">Le chrono s'arrête dès que le bloc est complet.</p>
@@ -1420,7 +1475,7 @@ $('simGo').onclick = () => {
 };
 $('exportBtn').onclick = async () => {
   const data = JSON.stringify({ app: 'Roux premier bloc', version: 3,
-    convention: "blanc en bas, vert devant, bloc rouge à gauche ; notation dans ce repère ; start = 54 couleurs ; mode = bloc, paire (carré arrière déjà fait), cfop ou roux (résolution complète) ; sub.stages = étapes d'une résolution complète (ms = durée, at = fin, moves, pause, entry = pause juste après l'étape précédente) ; temps en ms depuis le 1er mouvement (horloge du cube) ; sub.after = temps et coups après le 1er carré ; pauses mesurées entre quarts de tour",
+    convention: "blanc en bas, vert devant, bloc rouge à gauche ; notation dans ce repère ; start = 54 couleurs ; mode = bloc, paire (carré arrière déjà fait), sb (second bloc, premier bloc déjà fait), cfop ou roux (résolution complète) ; sub.stages = étapes d'une résolution complète (ms = durée, at = fin, moves, pause, entry = pause juste après l'étape précédente) ; temps en ms depuis le 1er mouvement (horloge du cube) ; sub.after = temps et coups après le 1er carré ; pauses mesurées entre quarts de tour",
     attempts: App.history.slice(-50) });
   const box = $('exportBox'); box.style.display = 'block'; box.value = data;
   try { await navigator.clipboard.writeText(data); toast('Copié : colle-le dans ta conversation avec Claude'); }

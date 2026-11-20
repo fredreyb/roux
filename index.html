@@ -247,7 +247,10 @@ const QIYI = (function () {
     }
     return out;
   }
-  return { KEY, CODES, TO_USER, frame, decode, hello, ack, ts, facelets, history };
+  // the cube clock counts in units of 1/1.6 ms: divide by 1.6 to get milliseconds
+  // (multiplying, as up to version 12, made every time 2.56 times too long)
+  const TICK = 1.6;
+  return { KEY, CODES, TO_USER, frame, decode, hello, ack, ts, facelets, history, TICK };
 })();
 
 // ------------------------------------------------------------------
@@ -514,8 +517,9 @@ const Recon = (function () {
     for (let i = 1; i < n; i++) if (qs[i].tc < qs[i - 1].tc) return arrival();
     const span = qs[n - 1].t - t0, cspan = qs[n - 1].tc - qs[0].tc;
     if (cspan <= 0) return arrival();
+    // the two clocks must agree within 25 %: otherwise the cube clock is not trusted and real arrival times are used
     let s = span > 300 ? span / cspan : 1;
-    if (!(s > 0.5 && s < 2)) s = 1;
+    if (!(s > 0.8 && s < 1.25)) return arrival();
     return mono(qs.map(x => (x.tc - qs[0].tc) * s));
   }
   // sensor parts for a display move (user frame)
@@ -866,7 +870,7 @@ function onCubeMove(msg) {
     }
   }
   let resynced = false;
-  const play = seq => seq.forEach(h => { const [f, d] = QIYI.CODES[h.code]; emitMove(QIYI.TO_USER[f], d, now - (ts - h.ts) * 1.6, h.ts * 1.6); });
+  const play = seq => seq.forEach(h => { const [f, d] = QIYI.CODES[h.code]; emitMove(QIYI.TO_USER[f], d, now - (ts - h.ts) / QIYI.TICK, h.ts / QIYI.TICK); });
   if (chosen) {
     S.streak++; S.mism = 0; if (S.streak >= 2) S.verified = true;
     play(chosen); markSeen(chosen);
@@ -909,7 +913,7 @@ const BT = {
     else if (op === 0x03) { if (msg[91] === 1) BT.write(QIYI.ack(msg)); onCubeMove(msg); }
   },
   async request() {
-    this.log('version 12 · navigateur : ' + navigator.userAgent.slice(0, 80));
+    this.log('version 13 · navigateur : ' + navigator.userAgent.slice(0, 80));
     const filters = [{ namePrefix: 'QY-QYSC' }, { namePrefix: 'XMD-' }, { namePrefix: 'QY-' }];
     try { return await navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC], optionalManufacturerData: [0x0504] }); }
     catch (e) { if (e.name === 'TypeError') return navigator.bluetooth.requestDevice({ filters, optionalServices: [this.SVC] }); throw e; }
@@ -1021,6 +1025,38 @@ const BT = {
 // Trainer
 // =================================================================
 const DIFF = { all: [4, 99], short: [4, 5], mid: [6, 6], long7: [7, 7], long: [8, 99] };
+// Versions 6 to 12 multiplied the cube clock by 1.6 instead of dividing it: the times of those attempts
+// (from the evening of 13/11 to version 13) are 2.56 times too long. Corrected once, on this device.
+// Pauses are kept only if the real gap exceeds the threshold, which is exact for single pauses.
+const CLOCK_BUG = { from: '2026-11-13T23:21:00Z', k: 2.56 };
+function fixOldClock(list, thrSec) {
+  let n = 0; const k = CLOCK_BUG.k, thr = thrSec * 1000;
+  for (const r of list) {
+    if (r.clock || r.clockFix || !r.timeline || !r.date || r.date < CLOCK_BUG.from) continue; // r.clock: recorded by version 13 or later
+    const sc = v => typeof v === 'number' ? Math.round(v / k) : v;
+    const oldTl = r.timeline.map(x => x[1]);
+    r.time = sc(r.time);
+    r.tps = r.time >= 300 ? +(r.moves / (r.time / 1000)).toFixed(2) : null;
+    r.timeline = r.timeline.map(([l, t]) => [l, sc(t)]);
+    r.pauses = (r.pauses || []).filter(p => p.ms / k > thr).map(p => ({ ...p, ms: sc(p.ms) }));
+    r.pauseTotal = r.pauses.reduce((a, p) => a + p.ms, 0);
+    if (r.sub) {
+      if (typeof r.sub.square === 'number') r.sub.square = sc(r.sub.square);
+      if (r.sub.after) r.sub.after = { ...r.sub.after, ms: sc(r.sub.after.ms) };
+      if (r.sub.stages) {
+        let end = -1; // index of the last token of the previous stage
+        r.sub.stages = r.sub.stages.map(st => {
+          const last = end + st.moves; let pause = 0, entry = 0;
+          for (let i = Math.max(1, end + 1); i <= last && i < oldTl.length; i++) { const g = (oldTl[i] - oldTl[i - 1]) / k; if (g > thr) { pause += g; if (i === end + 1 && end >= 0) entry = g; } }
+          end = last;
+          return { ...st, at: sc(st.at), ms: sc(st.ms), pause: Math.round(pause), entry: Math.round(entry) };
+        });
+      }
+    }
+    r.clockFix = k; n++;
+  }
+  return n;
+}
 const App = {
   phase: 'idle',        // idle | scrambling | free | inspect | solve | done | rewinding | replay | replayDone
   guide: null, scramble: null, startState: null, since: [], caseId: null,
@@ -1207,7 +1243,7 @@ const App = {
     const sqMs = sqQ == null ? null : sqQ < 0 ? 0 : rel[sqQ];
     const after = sqQ == null ? null : { ms: Math.round(time - sqMs), moves: sqQ < 0 ? tokens.length : Math.max(0, tokens.length - 1 - qTok[sqQ]) };
     const res = {
-      id: Date.now(), date: new Date().toISOString(), caseId: this.caseId, mode: this.curMode,
+      id: Date.now(), date: new Date().toISOString(), clock: 2, caseId: this.caseId, mode: this.curMode,
       scramble: this.scramble ? this.scramble.map(m => Cube.fmt(m.type, m.amt)).join(' ') : null,
       start: this.startState.join(''),
       inspection: Math.round(this.inspection), time: Math.round(time), moves: tokens.length,
@@ -1225,6 +1261,7 @@ const App = {
   },
   abort() { this.phase = 'idle'; render(); },
 };
+{ const n = fixOldClock(App.history, App.pauseThr); if (n) { store.set('rfb.history', App.history); App.clockFixed = n; setTimeout(() => toast(`Temps corrigés sur ${n} essais (14-20/11, divisés par 2,56)`), 1200); } }
 
 // =================================================================
 // Rendering
@@ -1494,7 +1531,7 @@ $('simGo').onclick = () => {
 };
 $('exportBtn').onclick = async () => {
   const data = JSON.stringify({ app: 'Roux premier bloc', version: 3,
-    convention: "blanc en bas, vert devant, bloc rouge à gauche ; notation dans ce repère ; start = 54 couleurs ; mode = bloc, paire (carré arrière déjà fait), sb (second bloc, premier bloc déjà fait), blocs2 (les deux blocs depuis un mélange complet), cfop ou roux (résolution complète) ; sub.stages = étapes d'une résolution complète (ms = durée, at = fin, moves, pause, entry = pause juste après l'étape précédente) ; temps en ms depuis le 1er mouvement (horloge du cube) ; sub.after = temps et coups après le 1er carré ; pauses mesurées entre quarts de tour",
+    convention: "blanc en bas, vert devant, bloc rouge à gauche ; notation dans ce repère ; start = 54 couleurs ; mode = bloc, paire (carré arrière déjà fait), sb (second bloc, premier bloc déjà fait), blocs2 (les deux blocs depuis un mélange complet), cfop ou roux (résolution complète) ; sub.stages = étapes d'une résolution complète (ms = durée, at = fin, moves, pause, entry = pause juste après l'étape précédente) ; temps en ms depuis le 1er mouvement (horloge du cube, unités de 1/1,6 ms converties) ; clockFix = essai enregistré avec l'erreur d'horloge des versions 6 à 12 et corrigé (÷ 2,56) ; clock = 2 : essai enregistré en version 13 ou plus ; sub.after = temps et coups après le 1er carré ; pauses mesurées entre quarts de tour",
     attempts: App.history.slice(-50) });
   const box = $('exportBox'); box.style.display = 'block'; box.value = data;
   try { await navigator.clipboard.writeText(data); toast('Copié : colle-le dans ta conversation avec Claude'); }
